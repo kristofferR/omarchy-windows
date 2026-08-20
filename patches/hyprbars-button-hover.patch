@@ -1,0 +1,85 @@
+diff --git a/hyprbars/barDeco.cpp b/hyprbars/barDeco.cpp
+index c27653d..4f95f05 100644
+--- a/hyprbars/barDeco.cpp
++++ b/hyprbars/barDeco.cpp
+@@ -150,9 +150,9 @@ void CHyprBar::onTouchUp(Event::SCallbackInfo& info, ITouch::SUpEvent e) {
+ }
+ 
+ void CHyprBar::onMouseMove(Vector2D coords) {
+-    // ensure proper redraws of button icons on hover when using hardware cursors
+-    if (g_pGlobalState->config.iconOnHover->value())
+-        damageOnButtonHover();
++    // Always damage button hover regions. Hover backgrounds need redraws even
++    // when icon_on_hover is disabled and the symbols stay permanently visible.
++    damageOnButtonHover();
+ 
+     if (!m_bDragPending || m_bTouchEv || !validMapped(m_pWindow) || m_touchId != 0)
+         return;
+@@ -382,6 +382,8 @@ void CHyprBar::renderBarButtonsText(CBox* barBox, const float scale, const float
+     const auto BARPADDING       = g_pGlobalState->config.barPadding->value();
+     const auto ALIGNBUTTONS     = g_pGlobalState->config.barButtonsAlignment->value();
+     const auto ICONONHOVER      = g_pGlobalState->config.iconOnHover->value();
++    const CHyprColor HOVERBGCOLOR{static_cast<uint64_t>(g_pGlobalState->config.buttonHoverBgColor->value())};
++    const CHyprColor CLOSEHOVERBGCOLOR{static_cast<uint64_t>(g_pGlobalState->config.closeButtonHoverBgColor->value())};
+ 
+     const bool BUTTONSRIGHT = ALIGNBUTTONS != "left";
+     const auto visibleCount = getVisibleButtonCount(BARBUTTONPADDING, BARPADDING, Vector2D{barBox->w, barBox->h}, scale);
+@@ -415,6 +417,21 @@ void CHyprBar::renderBarButtonsText(CBox* barBox, const float scale, const float
+         const auto iconY = barBox->y + barBox->height / 2.0 - button.iconTex->m_size.y / 2.0;
+         CBox       pos   = {iconX, iconY, button.iconTex->m_size.x, button.iconTex->m_size.y};
+ 
++        const auto hoverBaseColor = i == 0 ? CLOSEHOVERBGCOLOR : HOVERBGCOLOR;
++        if (hovering && hoverBaseColor.a > 0.F) {
++            const float hoverSize = barBox->height * 0.82F;
++            const float buttonX = barBox->x + (BUTTONSRIGHT ? barBox->width - offset - scaledButtonSize : offset);
++            CBox hoverBox = {
++                buttonX + (scaledButtonSize - hoverSize) * 0.5F,
++                barBox->y + (barBox->height - hoverSize) * 0.5F,
++                hoverSize,
++                hoverSize,
++            };
++            auto hoverColor = hoverBaseColor;
++            hoverColor.a *= a;
++            g_pHyprOpenGL->renderRect(hoverBox, hoverColor, {.round = static_cast<int>(std::round(hoverSize * 0.5F)), .roundingPower = 2.F});
++        }
++
+         if (!ICONONHOVER || (ICONONHOVER && m_iButtonHoverState > 0))
+             g_pHyprOpenGL->renderTexture(button.iconTex, pos, {.a = a});
+         offset += scaledButtonsPad + scaledButtonSize;
+diff --git a/hyprbars/globals.hpp b/hyprbars/globals.hpp
+index 0ef19ae..43c73d5 100644
+--- a/hyprbars/globals.hpp
++++ b/hyprbars/globals.hpp
+@@ -30,7 +30,7 @@ struct SGlobalState {
+     uint32_t                  titleColorRuleIdx = 0;
+ 
+     struct {
+-        SP<Config::Values::CColorValue>      barColor, textColor, inactiveButtonColor;
++        SP<Config::Values::CColorValue>      barColor, textColor, inactiveButtonColor, buttonHoverBgColor, closeButtonHoverBgColor;
+         SP<Config::Values::CIntValue>        barHeight;
+         SP<Config::Values::CIntValue>        barTextSize;
+         SP<Config::Values::CFontWeightValue> barTextWeight;
+diff --git a/hyprbars/main.cpp b/hyprbars/main.cpp
+index ae9c90b..d4d1e6f 100644
+--- a/hyprbars/main.cpp
++++ b/hyprbars/main.cpp
+@@ -215,6 +215,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+     g_pGlobalState->config.textColor           = makeShared<Config::Values::CColorValue>("plugin:hyprbars:col.text", "Change the text color", 0xffffffff);
+     g_pGlobalState->config.inactiveButtonColor = makeShared<Config::Values::CColorValue>(
+         "plugin:hyprbars:inactive_button_color", "Change the inactive button's color. 0x00000000 means unset", 0x00000000);
++    g_pGlobalState->config.buttonHoverBgColor = makeShared<Config::Values::CColorValue>(
++        "plugin:hyprbars:button_hover_bg_color", "Button background color while hovered", 0x18ffffff);
++    g_pGlobalState->config.closeButtonHoverBgColor = makeShared<Config::Values::CColorValue>(
++        "plugin:hyprbars:close_button_hover_bg_color", "Close button background color while hovered", 0x447436ff);
+     g_pGlobalState->config.barHeight       = makeShared<Config::Values::CIntValue>("plugin:hyprbars:bar_height", "Change the bar's height", 15);
+     g_pGlobalState->config.barTextSize     = makeShared<Config::Values::CIntValue>("plugin:hyprbars:bar_text_size", "Change the bar's text size", 10);
+     g_pGlobalState->config.barTextWeight   = makeShared<Config::Values::CFontWeightValue>("plugin:hyprbars:bar_text_weight", "Bar's title text weight (e.g. \"bold\" or an integer 100-1000)", 400);
+@@ -236,6 +240,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+     HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.barColor);
+     HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.textColor);
+     HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.inactiveButtonColor);
++    HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.buttonHoverBgColor);
++    HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.closeButtonHoverBgColor);
+     HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.barHeight);
+     HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.barTextSize);
+     HyprlandAPI::addConfigValueV2(PHANDLE, g_pGlobalState->config.barTextWeight);

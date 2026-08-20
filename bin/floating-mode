@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+state_dir="$runtime_dir/omarchy-floating-mode"
+enabled_file="$state_dir/enabled"
+managed_file="$state_dir/managed"
+
+require_tools() {
+  command -v hyprctl >/dev/null 2>&1 || { echo "hyprctl is required" >&2; exit 1; }
+  command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
+}
+
+valid_address() {
+  [[ "$1" =~ ^0x[0-9a-fA-F]+$ ]]
+}
+
+tile_window() {
+  local address="$1"
+  valid_address "$address" || return 0
+  hyprctl --batch \
+    "dispatch hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"1\", window = \"address:$address\" });"\
+"dispatch hl.dsp.window.fullscreen_state({ internal = 0, client = 0, action = \"set\", window = \"address:$address\" });"\
+"dispatch hl.dsp.window.float({ action = \"off\", window = \"address:$address\" });"\
+"dispatch hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"unset\", window = \"address:$address\" })" >/dev/null
+}
+
+transition_window() {
+  local address="$1" snapshot="$2" monitors="$3"
+  valid_address "$address" || return 0
+
+  local geometry monitor_x monitor_y
+  local work_width work_height current_x current_y current_width current_height peer_count
+  local max_width max_height target_x target_y target_width target_height
+  geometry="$(jq -r --arg address "$address" --argjson monitors "$monitors" '
+      . as $clients
+      | $clients[] | select(.address == $address) as $window
+      | ($monitors[] | select(.id == $window.monitor)) as $monitor
+      | ($monitor.reserved // [0, 0, 0, 0]) as $reserved
+      | ($monitor.scale // 1) as $scale
+      | (if (($monitor.transform // 0) % 2) == 1 then $monitor.height else $monitor.width end) as $physical_width
+      | (if (($monitor.transform // 0) % 2) == 1 then $monitor.width else $monitor.height end) as $physical_height
+      | (($physical_width / $scale) | floor) as $logical_width
+      | (($physical_height / $scale) | floor) as $logical_height
+      | [
+          ($monitor.x + $reserved[0]),
+          ($monitor.y + $reserved[1]),
+          ($logical_width - $reserved[0] - $reserved[2]),
+          ($logical_height - $reserved[1] - $reserved[3]),
+          $window.at[0],
+          $window.at[1],
+          $window.size[0],
+          $window.size[1],
+          ([$clients[] | select(
+            .mapped == true
+            and .floating == false
+            and .workspace.id == $window.workspace.id
+          )] | length)
+        ] | @tsv
+    ' <<<"$snapshot" 2>/dev/null)" || return 0
+
+  IFS=$'\t' read -r monitor_x monitor_y work_width work_height current_x current_y current_width current_height peer_count <<<"$geometry"
+  [[ "$work_width" =~ ^[0-9]+$ && "$work_height" =~ ^[0-9]+$ ]] || return 0
+  [[ "$current_x" =~ ^-?[0-9]+$ && "$current_y" =~ ^-?[0-9]+$ ]] || return 0
+  [[ "$current_width" =~ ^[0-9]+$ && "$current_height" =~ ^[0-9]+$ ]] || return 0
+
+  if ((peer_count > 1)); then
+    # Preserve the visual overview of a populated tiled workspace. Each window
+    # keeps its old tile center and becomes only slightly smaller. The hard cap
+    # also protects against stale or oversized client geometry.
+    max_width=$((work_width * 94 / 100))
+    max_height=$((work_height * 94 / 100))
+    target_width=$((current_width * 94 / 100))
+    target_height=$((current_height * 94 / 100))
+    ((target_width > max_width)) && target_width=$max_width
+    ((target_height > max_height)) && target_height=$max_height
+    target_x=$((current_x + (current_width - target_width) / 2))
+    target_y=$((current_y + (current_height - target_height) / 2))
+  else
+    # A lone tiled window and every newly opened program use the same predictable
+    # geometry: at most 70% of the scaled work area, never enlarged, centered.
+    target_width=$((work_width * 70 / 100))
+    target_height=$((work_height * 70 / 100))
+    ((current_width < target_width)) && target_width=$current_width
+    ((current_height < target_height)) && target_height=$current_height
+    target_x=$((monitor_x + (work_width - target_width) / 2))
+    target_y=$((monitor_y + (work_height - target_height) / 2))
+  fi
+
+  # Submit the entire transition through one IPC request. This prevents
+  # Hyprland from presenting tiled, floated and resized intermediate frames.
+  hyprctl --batch \
+    "dispatch hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"1\", window = \"address:$address\" });"\
+"dispatch hl.dsp.window.fullscreen_state({ internal = 0, client = 0, action = \"set\", window = \"address:$address\" });"\
+"dispatch hl.dsp.window.float({ action = \"on\", window = \"address:$address\" });"\
+"dispatch hl.dsp.window.resize({ x = $target_width, y = $target_height, window = \"address:$address\" });"\
+"dispatch hl.dsp.window.move({ x = $target_x, y = $target_y, window = \"address:$address\" });"\
+"dispatch hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"unset\", window = \"address:$address\" })" >/dev/null
+}
+
+hyprbars_loaded() {
+  hyprctl plugins list 2>/dev/null | grep -q 'hyprbars'
+}
+
+set_titlebars() {
+  local value="$1"
+  hyprbars_loaded || return 0
+  hyprctl eval "hl.config({ plugin = { hyprbars = { enabled = $value } } })" >/dev/null
+}
+
+clients() {
+  hyprctl -j clients
+}
+
+sync_windows() {
+  [[ -e "$enabled_file" ]] || return 0
+  local snapshot monitors address
+  snapshot="$(clients)"
+  # Monitor geometry is optional: failure must not block the floating action.
+  monitors="$(hyprctl -j monitors 2>/dev/null || printf '[]')"
+  while IFS= read -r address; do
+    [[ -n "$address" ]] || continue
+    # A newly mapped window may briefly reject compositor commands. Never mark
+    # it as handled until floating succeeded, and retry any managed window that
+    # is still reported as tiled on the next service pass.
+    transition_window "$address" "$snapshot" "$monitors" || continue
+    if ! grep -Fxq "$address" "$managed_file" 2>/dev/null; then
+      printf '%s\n' "$address" >>"$managed_file"
+    fi
+  done < <(jq -r '.[] | select(.mapped == true and .floating == false) | .address' <<<"$snapshot")
+}
+
+enable_mode() {
+  mkdir -p -m 700 "$state_dir"
+  if [[ -e "$enabled_file" ]]; then
+    sync_windows
+    return 0
+  fi
+  : >"$managed_file"
+  : >"$enabled_file"
+  sync_windows
+  # Enable decorations only after all windows have reached their final
+  # floating geometry, avoiding a tiled titlebar re-layout beforehand.
+  set_titlebars true
+}
+
+disable_mode() {
+  if [[ -f "$managed_file" ]]; then
+    local live address
+    live="$(clients | jq -r '.[].address')"
+    while IFS= read -r address; do
+      [[ -n "$address" ]] || continue
+      if grep -Fxq "$address" <<<"$live"; then
+        tile_window "$address"
+      fi
+    done <"$managed_file"
+  fi
+  set_titlebars false
+  rm -f "$enabled_file" "$managed_file"
+  rmdir "$state_dir" 2>/dev/null || true
+}
+
+require_tools
+case "${1:-}" in
+  on)
+    enable_mode
+    ;;
+  off)
+    disable_mode
+    ;;
+  toggle)
+    if [[ -e "$enabled_file" ]]; then disable_mode; else enable_mode; fi
+    ;;
+  sync)
+    sync_windows
+    ;;
+  status)
+    if [[ -e "$enabled_file" ]]; then printf 'on\n'; else printf 'off\n'; fi
+    ;;
+  *)
+    echo "usage: floating-mode on|off|toggle|sync|status" >&2
+    exit 2
+    ;;
+esac

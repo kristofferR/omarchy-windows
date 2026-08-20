@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.rawritude.floating-mode",
+  "name": "Floating Mode",
+  "version": "1.0.0",
+  "author": "rawritude",
+  "license": "MIT",
+  "description": "Instantly toggle a clean floating workspace from the Omarchy bar, designed for large and ultrawide monitors.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Floating Mode",
+    "description": "Switch all windows between tiled and floating mode.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
