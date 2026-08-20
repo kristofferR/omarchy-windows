@@ -1,4 +1,4 @@
-# Floating Mode for Omarchy
+# Floating Window Mode for Omarchy
 
 Floating Mode adds a clean tiled ↔ floating toggle to the Omarchy bar. It is designed especially for large and ultrawide monitors, where a single maximized application wastes space and traditional tiling can feel too rigid.
 
