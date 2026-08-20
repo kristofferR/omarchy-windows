@@ -57,7 +57,7 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the complete audited dependency and p
 Run these commands after the GitHub repository is public:
 
 ```bash
-omarchy plugin add https://github.com/rawritude/omarchy-floating-mode.git --enable --yes
+omarchy plugin add https://github.com/jwm3000/omarchy-windows.git --enable --yes
 omarchy bar move io.github.rawritude.floating-mode --section right
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars
 ```
@@ -151,7 +151,7 @@ omarchy plugin enable io.github.rawritude.floating-mode
 
 This repository already contains the required root-level `manifest.json`, README, MIT license, and optional preview image. Before submission:
 
-1. Push the repository to `https://github.com/rawritude/omarchy-floating-mode` and make it public.
+1. Push the repository to `https://github.com/jwm3000/omarchy-windows` and make it public.
 2. Confirm the default branch contains a clean release commit.
 3. Run the validation commands above on current Omarchy.
 4. Submit the public repository URL at [omarchyplugins.com](https://omarchyplugins.com/publish.html).

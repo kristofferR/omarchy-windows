@@ -1,6 +1,6 @@
 ### Repository URL
 
-https://github.com/rawritude/omarchy-floating-mode
+https://github.com/jwm3000/omarchy-windows
 
 ### Category
 
