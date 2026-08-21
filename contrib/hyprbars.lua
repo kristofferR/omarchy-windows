@@ -18,7 +18,7 @@ hl.config({
       bar_precedence_over_border = true,
       bar_padding = 8,
       bar_button_padding = 6,
-      icon_on_hover = false,
+      icon_on_hover = true,
     },
   },
 })

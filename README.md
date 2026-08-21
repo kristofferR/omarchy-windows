@@ -66,7 +66,7 @@ Click the overlapping-windows icon in the Omarchy bar:
 - Highlighted icon: Floating Mode is active
 - Click again: managed windows return directly to tiling
 
-In Floating Mode, use the native titlebar to drag a window. The square button toggles maximization and the close button closes the window.
+In Floating Mode, use the native titlebar to drag a window. Hover over the controls to reveal them; the square button toggles maximization and the close button closes the window.
 
 Runtime state is kept in `$XDG_RUNTIME_DIR/omarchy-floating-mode` and disappears at logout. No window content is read or stored.
 
