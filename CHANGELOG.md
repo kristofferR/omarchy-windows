@@ -2,6 +2,10 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.3 — 2026-08-21
+
+- Kept maximize and close controls permanently visible
+
 ## 1.0.2 — 2026-08-21
 
 - Enabled hyprbars' official `icon_on_hover` button effect
