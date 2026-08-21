@@ -2,6 +2,12 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.4 — 2026-08-21
+
+- Restored circular hover backgrounds while keeping controls visible
+- Pinned the patched hyprbars build to reviewed upstream commit `7644cecdb947060682891a0db2a0cdc5c0b9e704`
+- Verifies the detached source checkout before compiling
+
 ## 1.0.3 — 2026-08-21
 
 - Kept maximize and close controls permanently visible

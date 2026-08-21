@@ -19,6 +19,8 @@ hl.config({
       bar_padding = 8,
       bar_button_padding = 6,
       icon_on_hover = false,
+      button_hover_bg_color = "rgba(ffffff24)",
+      close_button_hover_bg_color = "rgba(ff4d4d48)",
     },
   },
 })

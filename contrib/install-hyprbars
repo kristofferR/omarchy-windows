@@ -9,7 +9,18 @@ hypr_dir="$config_home/hypr"
 module_file="$hypr_dir/floating-mode.lua"
 hyprland_file="$hypr_dir/hyprland.lua"
 require_line='require("hypr.floating-mode")'
+cache_dir="/var/cache/hyprpm/$USER/hyprland-plugins"
+cache_plugin="$cache_dir/hyprbars.so"
+cache_state="$cache_dir/state.toml"
+backup_plugin="$state_home/hyprbars.so.official"
 enabled_state="$state_home/hyprbars-was-enabled"
+build_dir=""
+source_hash="7644cecdb947060682891a0db2a0cdc5c0b9e704"
+
+cleanup() {
+  [[ -z "$build_dir" ]] || rm -rf -- "$build_dir"
+}
+trap cleanup EXIT
 
 require_commands() {
   local command_name missing=0
@@ -20,7 +31,7 @@ require_commands() {
     fi
   done
   ((missing == 0)) || {
-    echo "Install the missing commands and run this installer again." >&2
+    echo "Install the missing build tools and run this installer again." >&2
     exit 1
   }
 }
@@ -33,26 +44,27 @@ hyprbars_is_enabled() {
 }
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  require_commands hyprctl hyprpm sed grep
+  require_commands hyprctl hyprpm sudo install sed grep
   if [[ -f "$hyprland_file" ]]; then
     sed -i '\|^require("hypr\.floating-mode")$|d' "$hyprland_file"
   fi
   rm -f "$module_file"
+  hyprpm disable hyprbars >/dev/null 2>&1 || true
+  if [[ -f "$backup_plugin" ]]; then
+    sudo install -m755 "$backup_plugin" "$cache_plugin"
+  fi
   if [[ -f "$enabled_state" ]] && grep -qx true "$enabled_state"; then
-    hyprpm enable hyprbars >/dev/null
-  else
-    hyprpm disable hyprbars >/dev/null 2>&1 || true
+    hyprpm enable hyprbars
   fi
   hyprctl reload
   hyprctl configerrors
-  # Remove state left by this release and the retired patched-binary installer.
-  rm -f "$enabled_state" "$state_home/hyprbars.so.official"
+  rm -f "$backup_plugin" "$enabled_state"
   rmdir "$state_home" 2>/dev/null || true
-  echo "Removed Floating Mode's titlebar integration."
+  echo "Removed Floating Mode's titlebar integration and restored the original hyprbars module."
   exit 0
 fi
 
-require_commands hyprctl hyprpm install sed grep awk
+require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo install sed grep mktemp awk
 
 [[ -f "$plugin_dir/contrib/hyprbars.lua" ]] || {
   echo "Run this from an installed $plugin_id plugin." >&2
@@ -60,18 +72,38 @@ require_commands hyprctl hyprpm install sed grep awk
 }
 [[ -f "$hyprland_file" ]] || { echo "Missing $hyprland_file" >&2; exit 1; }
 
-# hyprpm selects, builds, and installs the official hyprbars revision pinned for
-# the running Hyprland ABI. Floating Mode does not fetch or replace native code.
 hyprpm update
 if ! hyprpm list 2>/dev/null | grep -q 'Plugin hyprbars'; then
-  hyprpm add https://github.com/hyprwm/hyprland-plugins
+  hyprpm add https://github.com/hyprwm/hyprland-plugins "$source_hash"
 fi
 
+# Build the reviewed upstream source commit. The full commit ID is fixed in
+# this installer and verified before any downloaded source is compiled.
+[[ "$source_hash" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "The pinned hyprland-plugins commit is invalid." >&2
+  exit 1
+}
+
+build_dir="$(mktemp -d)"
+git -C "$build_dir" init --quiet hyprland-plugins
+git -C "$build_dir/hyprland-plugins" remote add origin https://github.com/hyprwm/hyprland-plugins
+git -C "$build_dir/hyprland-plugins" fetch --depth 1 origin "$source_hash"
+git -C "$build_dir/hyprland-plugins" checkout --detach FETCH_HEAD
+[[ "$(git -C "$build_dir/hyprland-plugins" rev-parse HEAD)" == "$source_hash" ]] || {
+  echo "Fetched source does not match the reviewed commit." >&2
+  exit 1
+}
+git -C "$build_dir/hyprland-plugins" apply "$plugin_dir/patches/hyprbars-button-hover.patch"
+make -C "$build_dir/hyprland-plugins/hyprbars"
+
 mkdir -p -m 700 "$state_home"
-if [[ ! -f "$enabled_state" ]]; then
+if [[ ! -f "$backup_plugin" ]]; then
+  install -m755 "$cache_plugin" "$backup_plugin"
   if hyprbars_is_enabled; then printf 'true\n'; else printf 'false\n'; fi >"$enabled_state"
 fi
 
+hyprpm disable hyprbars >/dev/null 2>&1 || true
+sudo install -m755 "$build_dir/hyprland-plugins/hyprbars/hyprbars.so" "$cache_plugin"
 hyprpm enable hyprbars
 
 install -Dm644 "$plugin_dir/contrib/hyprbars.lua" "$module_file"
@@ -81,4 +113,4 @@ hyprctl reload
 errors="$(hyprctl configerrors)"
 printf '%s\n' "$errors"
 [[ -z "$errors" ]] || exit 1
-echo "Installed Floating Mode with the official hyprbars plugin."
+echo "Installed native, compositor-attached Floating Mode titlebars."

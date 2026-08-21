@@ -33,16 +33,22 @@ The result is simple: tiling when you want structure, floating when you want spa
 
 These runtime components are included with a standard current Omarchy installation.
 
-### One-time titlebar setup
+### One-time titlebar build
 
-The native titlebar uses the official Hyprland `hyprbars` plugin without modifying its native code. Its installer requires:
+The native titlebar uses the official Hyprland `hyprbars` plugin with a small bundled hover-background patch. Its installer requires:
 
 - Internet access to GitHub
 - An interactive terminal
-- `hyprpm`
-- `install`, `sed`, `grep`, and `awk`
+- `hyprpm`, `git`, `make`, `cmake`, `cpio`, `pkg-config`, `gcc`, and `g++`
+- `sudo` permission to replace the cached `hyprbars.so`
 
-The installer checks every required command before making changes. `hyprpm` selects and builds the official source revision pinned for the installed Hyprland ABI; Floating Mode does not clone source, patch native code, or use `sudo`.
+The installer checks every required command before making changes. It builds the reviewed upstream commit `7644cecdb947060682891a0db2a0cdc5c0b9e704` for the installed Hyprland ABI, saves the original module, and restores it during uninstall.
+
+On a minimal Arch-based installation, missing build tools can be installed with:
+
+```bash
+sudo pacman -S --needed base-devel cmake cpio git jq pkgconf
+```
 
 See [DEPENDENCIES.md](DEPENDENCIES.md) for the complete audited dependency and privilege list.
 
@@ -56,7 +62,7 @@ omarchy bar move io.github.rawritude.floating-mode --section right
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars
 ```
 
-The final command is intentionally separate because Omarchy does not execute installation hooks when adding a plugin. Read [`contrib/install-hyprbars`](contrib/install-hyprbars) before running it if you want to review every change.
+The final command is intentionally separate because Omarchy does not execute installation hooks or privileged commands when adding a plugin. Read [`contrib/install-hyprbars`](contrib/install-hyprbars) before running it if you want to review every system change.
 
 ## Usage
 
@@ -66,7 +72,7 @@ Click the overlapping-windows icon in the Omarchy bar:
 - Highlighted icon: Floating Mode is active
 - Click again: managed windows return directly to tiling
 
-In Floating Mode, use the native titlebar to drag a window. Its controls remain visible at all times; the square button toggles maximization and the close button closes the window.
+In Floating Mode, use the native titlebar to drag a window. The square button toggles maximization; the close button closes the window and shows a red circular background on hover.
 
 Runtime state is kept in `$XDG_RUNTIME_DIR/omarchy-floating-mode` and disappears at logout. No window content is read or stored.
 
@@ -78,7 +84,7 @@ Update community plugins with Omarchy:
 omarchy plugin update --yes
 ```
 
-If an update changes `contrib/hyprbars.lua`, rerun:
+If an update changes `contrib/hyprbars.lua` or the bundled native patch, rerun:
 
 ```bash
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars
@@ -95,7 +101,7 @@ First click the bar button to return to tiled mode. Then run:
 omarchy plugin remove io.github.rawritude.floating-mode --yes
 ```
 
-The uninstall step removes the added Lua configuration, restores hyprbars' previous enabled state, reloads Hyprland, and removes the plugin's installer state.
+The uninstall step removes the added Lua configuration, restores the original `hyprbars.so`, restores its previous enabled state, reloads Hyprland, and removes the plugin's installer state.
 
 If the widget is unavailable while Floating Mode is still active, restore tiling manually before removing the plugin:
 
@@ -109,15 +115,15 @@ The headless service watches for newly mapped tiled windows while the mode is en
 
 Only window addresses changed by Floating Mode are recorded. When the mode is disabled, only those windows return to tiling.
 
-Titlebars and their maximize and close controls are rendered inside the compositor by the official [`hyprbars`](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars) plugin through its standard `add_button` interface.
+Titlebars are rendered inside the compositor by the official [`hyprbars`](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars) plugin. The bundled [`hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch) adds configurable circular hover backgrounds while keeping the button symbols permanently visible.
 
 ## Privacy and security
 
 - Runtime operation is local and unprivileged
 - The plugin reads window geometry and metadata from `hyprctl`, never window contents
 - No telemetry, analytics, network requests, or background downloads are used at runtime
-- Network access occurs only when the explicit titlebar installer invokes `hyprpm`
-- Floating Mode neither builds nor installs privileged executable code and never invokes `sudo`
+- Network access occurs only when the explicit titlebar installer invokes `hyprpm` and clones the official Hyprland plugins repository
+- `sudo` is used only to install or restore `/var/cache/hyprpm/$USER/hyprland-plugins/hyprbars.so`
 - Persistent configuration is limited to `~/.config/hypr/floating-mode.lua`, one `require(...)` line, and reversible state below `$XDG_STATE_HOME`
 
 ## Development and validation
