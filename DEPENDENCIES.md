@@ -19,13 +19,9 @@ Runtime operation is local and uses the current user's permissions.
 | Dependency | Purpose |
 | --- | --- |
 | `hyprpm` | Selects the official `hyprbars` commit compatible with the installed Hyprland ABI |
-| `git` | Clones that exact official source commit and applies the bundled patch |
-| `make`, `gcc`, `g++`, `pkg-config` | Builds `hyprbars.so` |
-| `cmake`, `cpio` | Required by `hyprpm` for headers and plugin management |
-| `sudo`, `install` | Replaces and restores only the cached `hyprbars.so` |
-| `sed`, `grep`, `awk`, `mktemp` | Installer validation, metadata parsing, and temporary workspace handling |
+| `install`, `sed`, `grep`, `awk` | Installs user configuration and tracks the previous enabled state |
 
-The installer verifies these commands before beginning. It needs network access only for `hyprpm update` and the clone of `https://github.com/hyprwm/hyprland-plugins`.
+The installer verifies these commands before beginning. It needs network access only when `hyprpm` updates or adds the official plugin repository.
 
 ## Files and privileges
 
@@ -33,20 +29,14 @@ Normal user writes:
 
 - `~/.config/hypr/floating-mode.lua`
 - One exact `require("hypr.floating-mode")` line in `~/.config/hypr/hyprland.lua`
-- `$XDG_STATE_HOME/omarchy-floating-mode/` for the original module and previous enabled state
+- `$XDG_STATE_HOME/omarchy-floating-mode/` for the previous enabled state
 - `$XDG_RUNTIME_DIR/omarchy-floating-mode/` for session-only window state
 
-Privileged write:
-
-- `/var/cache/hyprpm/$USER/hyprland-plugins/hyprbars.so`
-
-The original cached module is saved before replacement. `--uninstall` restores it, restores the previous enabled state, removes the Lua integration, reloads Hyprland, and deletes the installer state.
+Floating Mode performs no privileged writes and does not invoke `sudo`. `--uninstall` restores the previous enabled state, removes the Lua integration, reloads Hyprland, and deletes the installer state.
 
 ## External code
 
 - Official upstream: [hyprwm/hyprland-plugins](https://github.com/hyprwm/hyprland-plugins)
-- Modified component: `hyprbars` only
-- Local modification: [`patches/hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch)
-- Patch purpose: configurable circular hover backgrounds for standard and close buttons
+- Interface used: hyprbars' standard configuration and `add_button` action
 
-The upstream source is not vendored in this repository. The installer checks out the commit recorded by `hyprpm`, so the build follows Hyprland's ABI pin instead of the moving upstream branch.
+The upstream source is not vendored, cloned, or patched by Floating Mode. Native plugin installation is delegated entirely to Hyprland's official `hyprpm` manager and its ABI commit pins.

@@ -2,6 +2,13 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.1 — 2026-08-21
+
+- Removed the custom native hyprbars patch and privileged binary replacement
+- Delegated installation of the unmodified ABI-pinned hyprbars plugin to hyprpm
+- Switched titlebar controls to hyprbars' standard `add_button` interface only
+- Removed the custom hover-background options
+
 ## 1.0.0 — 2026-08-21
 
 - Added an Omarchy bar toggle for tiled and floating modes

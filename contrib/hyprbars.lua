@@ -19,10 +19,6 @@ hl.config({
       bar_padding = 8,
       bar_button_padding = 6,
       icon_on_hover = false,
-      -- Requires the bundled native hover patch. This translucent foreground
-      -- tint follows light and dark themes without introducing a fixed color.
-      button_hover_bg_color = "rgba(ffffff24)",
-      close_button_hover_bg_color = "rgba(ff4d4d48)",
     },
   },
 })
