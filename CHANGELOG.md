@@ -2,6 +2,10 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.6 — 2026-08-22
+
+- Made the reviewed 40-character hyprland-plugins commit literal at every fetch, checkout, verification, and registration site so automated validation can prove the source pin
+
 ## 1.0.5 — 2026-08-22
 
 - Removed the shared `/tmp` fallback for runtime state

@@ -15,7 +15,6 @@ cache_state="$cache_dir/state.toml"
 backup_plugin="$state_home/hyprbars.so.official"
 enabled_state="$state_home/hyprbars-was-enabled"
 build_dir=""
-source_hash="7644cecdb947060682891a0db2a0cdc5c0b9e704"
 
 cleanup() {
   [[ -z "$build_dir" ]] || rm -rf -- "$build_dir"
@@ -74,22 +73,16 @@ require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo inst
 
 hyprpm update
 if ! hyprpm list 2>/dev/null | grep -q 'Plugin hyprbars'; then
-  hyprpm add https://github.com/hyprwm/hyprland-plugins "$source_hash"
+  hyprpm add https://github.com/hyprwm/hyprland-plugins 7644cecdb947060682891a0db2a0cdc5c0b9e704
 fi
 
-# Build the reviewed upstream source commit. The full commit ID is fixed in
-# this installer and verified before any downloaded source is compiled.
-[[ "$source_hash" =~ ^[0-9a-f]{40}$ ]] || {
-  echo "The pinned hyprland-plugins commit is invalid." >&2
-  exit 1
-}
-
+# Fetch, detach, and verify the literal reviewed commit before executing source.
 build_dir="$(mktemp -d)"
 git -C "$build_dir" init --quiet hyprland-plugins
 git -C "$build_dir/hyprland-plugins" remote add origin https://github.com/hyprwm/hyprland-plugins
-git -C "$build_dir/hyprland-plugins" fetch --depth 1 origin "$source_hash"
-git -C "$build_dir/hyprland-plugins" checkout --detach FETCH_HEAD
-[[ "$(git -C "$build_dir/hyprland-plugins" rev-parse HEAD)" == "$source_hash" ]] || {
+git -C "$build_dir/hyprland-plugins" fetch --depth 1 origin 7644cecdb947060682891a0db2a0cdc5c0b9e704
+git -C "$build_dir/hyprland-plugins" checkout --detach 7644cecdb947060682891a0db2a0cdc5c0b9e704
+[[ "$(git -C "$build_dir/hyprland-plugins" rev-parse HEAD)" == "7644cecdb947060682891a0db2a0cdc5c0b9e704" ]] || {
   echo "Fetched source does not match the reviewed commit." >&2
   exit 1
 }
