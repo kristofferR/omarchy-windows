@@ -2,6 +2,10 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.12 — 2026-08-22
+
+- Changed the displayed plugin author from `rawritude` to `Norbert Winter`
+
 ## 1.0.11 — 2026-08-22
 
 - Registered every private helper buffer for process-exit cleanup immediately after creation

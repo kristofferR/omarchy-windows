@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "io.github.rawritude.floating-mode",
   "name": "Floating Mode",
-  "version": "1.0.11",
-  "author": "rawritude",
+  "version": "1.0.12",
+  "author": "Norbert Winter",
   "license": "MIT",
   "description": "Instantly toggle a clean floating workspace from the Omarchy bar, designed for large and ultrawide monitors.",
   "kinds": [
