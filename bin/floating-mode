@@ -1,10 +1,68 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+current_uid="$(id -u)"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$current_uid}"
 state_dir="$runtime_dir/omarchy-floating-mode"
 enabled_file="$state_dir/enabled"
 managed_file="$state_dir/managed"
+
+die() {
+  printf 'floating-mode: %s\n' "$1" >&2
+  exit 1
+}
+
+validate_private_dir() {
+  local path="$1" label="$2" owner mode
+  [[ -d "$path" && ! -L "$path" ]] || die "$label is not a real directory: $path"
+  owner="$(stat -c '%u' -- "$path")" || die "cannot inspect $label: $path"
+  mode="$(stat -c '%a' -- "$path")" || die "cannot inspect $label permissions: $path"
+  [[ "$owner" == "$current_uid" ]] || die "$label is not owned by the current user: $path"
+  (( (8#$mode & 077) == 0 )) || die "$label is accessible by other users: $path"
+}
+
+validate_state_file() {
+  local path="$1" owner links
+  [[ ! -L "$path" && -f "$path" ]] || die "unsafe state file: $path"
+  owner="$(stat -c '%u' -- "$path")" || die "cannot inspect state file: $path"
+  links="$(stat -c '%h' -- "$path")" || die "cannot inspect state file links: $path"
+  [[ "$owner" == "$current_uid" ]] || die "state file is not owned by the current user: $path"
+  [[ "$links" == 1 ]] || die "state file has multiple hard links: $path"
+  chmod 600 -- "$path"
+}
+
+prepare_state_dir() {
+  local state_path
+  validate_private_dir "$runtime_dir" "runtime directory"
+  umask 077
+  if ! mkdir -m 700 -- "$state_dir" 2>/dev/null; then
+    validate_private_dir "$state_dir" "state directory"
+  fi
+  chmod 700 -- "$state_dir"
+  for state_path in "$enabled_file" "$managed_file"; do
+    if [[ -e "$state_path" || -L "$state_path" ]]; then
+      validate_state_file "$state_path"
+    fi
+  done
+}
+
+state_file_exists() {
+  local path="$1"
+  if [[ -e "$path" || -L "$path" ]]; then
+    validate_state_file "$path"
+    return 0
+  fi
+  return 1
+}
+
+truncate_state_file() {
+  local path="$1"
+  if [[ -e "$path" || -L "$path" ]]; then
+    validate_state_file "$path"
+  fi
+  : >"$path"
+  validate_state_file "$path"
+}
 
 require_tools() {
   command -v hyprctl >/dev/null 2>&1 || { echo "hyprctl is required" >&2; exit 1; }
@@ -113,7 +171,8 @@ clients() {
 }
 
 sync_windows() {
-  [[ -e "$enabled_file" ]] || return 0
+  state_file_exists "$enabled_file" || return 0
+  state_file_exists "$managed_file" || die "managed state is missing while Floating Mode is enabled"
   local snapshot monitors address
   snapshot="$(clients)"
   # Monitor geometry is optional: failure must not block the floating action.
@@ -131,13 +190,12 @@ sync_windows() {
 }
 
 enable_mode() {
-  mkdir -p -m 700 "$state_dir"
-  if [[ -e "$enabled_file" ]]; then
+  if state_file_exists "$enabled_file"; then
     sync_windows
     return 0
   fi
-  : >"$managed_file"
-  : >"$enabled_file"
+  truncate_state_file "$managed_file"
+  truncate_state_file "$enabled_file"
   sync_windows
   # Enable decorations only after all windows have reached their final
   # floating geometry, avoiding a tiled titlebar re-layout beforehand.
@@ -145,7 +203,7 @@ enable_mode() {
 }
 
 disable_mode() {
-  if [[ -f "$managed_file" ]]; then
+  if state_file_exists "$managed_file"; then
     local live address
     live="$(clients | jq -r '.[].address')"
     while IFS= read -r address; do
@@ -156,11 +214,13 @@ disable_mode() {
     done <"$managed_file"
   fi
   set_titlebars false
-  rm -f "$enabled_file" "$managed_file"
+  if state_file_exists "$enabled_file"; then rm -f -- "$enabled_file"; fi
+  if state_file_exists "$managed_file"; then rm -f -- "$managed_file"; fi
   rmdir "$state_dir" 2>/dev/null || true
 }
 
 require_tools
+prepare_state_dir
 case "${1:-}" in
   on)
     enable_mode
@@ -169,13 +229,13 @@ case "${1:-}" in
     disable_mode
     ;;
   toggle)
-    if [[ -e "$enabled_file" ]]; then disable_mode; else enable_mode; fi
+    if state_file_exists "$enabled_file"; then disable_mode; else enable_mode; fi
     ;;
   sync)
     sync_windows
     ;;
   status)
-    if [[ -e "$enabled_file" ]]; then printf 'on\n'; else printf 'off\n'; fi
+    if state_file_exists "$enabled_file"; then printf 'on\n'; else printf 'off\n'; fi
     ;;
   *)
     echo "usage: floating-mode on|off|toggle|sync|status" >&2

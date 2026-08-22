@@ -75,6 +75,7 @@ Click the overlapping-windows icon in the Omarchy bar:
 In Floating Mode, use the native titlebar to drag a window. The square button toggles maximization; the close button closes the window and shows a red circular background on hover.
 
 Runtime state is kept in `$XDG_RUNTIME_DIR/omarchy-floating-mode` and disappears at logout. No window content is read or stored.
+The runtime directory must be private and owned by the current user; unsafe directories, symlinks, and state files are rejected before use.
 
 ## Updating
 

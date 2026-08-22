@@ -2,6 +2,13 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.5 — 2026-08-22
+
+- Removed the shared `/tmp` fallback for runtime state
+- Required private, user-owned runtime and state directories
+- Rejected symlinked, non-regular, wrong-owner, and hard-linked state files
+- Restricted runtime state files to mode 0600
+
 ## 1.0.4 — 2026-08-21
 
 - Restored circular hover backgrounds while keeping controls visible
