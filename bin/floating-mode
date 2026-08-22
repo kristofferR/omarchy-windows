@@ -166,8 +166,44 @@ set_titlebars() {
   hyprctl eval "hl.config({ plugin = { hyprbars = { enabled = $value } } })" >/dev/null
 }
 
+bounded_hypr_json() {
+  local resource="$1" max_bytes="$2" max_items="$3" buffer bytes
+  buffer="$(mktemp -p "$state_dir" ".${resource}.XXXXXX")" || die "cannot create bounded IPC buffer"
+  chmod 600 -- "$buffer"
+
+  # Read at most one byte beyond the ceiling. With pipefail, a producer that
+  # keeps writing after head closes is rejected without entering a shell var.
+  if ! hyprctl -j "$resource" 2>/dev/null | head -c "$((max_bytes + 1))" >"$buffer"; then
+    rm -f -- "$buffer"
+    printf 'floating-mode: failed or oversized hyprctl %s response\n' "$resource" >&2
+    return 1
+  fi
+
+  bytes="$(stat -c '%s' -- "$buffer")" || {
+    rm -f -- "$buffer"
+    return 1
+  }
+  if ((bytes > max_bytes)); then
+    rm -f -- "$buffer"
+    printf 'floating-mode: hyprctl %s response exceeds %d bytes\n' "$resource" "$max_bytes" >&2
+    return 1
+  fi
+  if ! jq -e --argjson max "$max_items" 'type == "array" and length <= $max' "$buffer" >/dev/null 2>&1; then
+    rm -f -- "$buffer"
+    printf 'floating-mode: invalid or excessive hyprctl %s object count\n' "$resource" >&2
+    return 1
+  fi
+
+  cat -- "$buffer"
+  rm -f -- "$buffer"
+}
+
 clients() {
-  hyprctl -j clients
+  bounded_hypr_json clients 1048576 256
+}
+
+monitors() {
+  bounded_hypr_json monitors 262144 64
 }
 
 sync_windows() {
@@ -176,7 +212,7 @@ sync_windows() {
   local snapshot monitors address
   snapshot="$(clients)"
   # Monitor geometry is optional: failure must not block the floating action.
-  monitors="$(hyprctl -j monitors 2>/dev/null || printf '[]')"
+  monitors="$(monitors || printf '[]')"
   while IFS= read -r address; do
     [[ -n "$address" ]] || continue
     # A newly mapped window may briefly reject compositor commands. Never mark

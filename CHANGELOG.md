@@ -2,6 +2,13 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.7 — 2026-08-22
+
+- Bounded recurring Hyprland client IPC to 1 MiB and 256 objects
+- Bounded monitor IPC to 256 KiB and 64 objects
+- Rejected truncated, invalid, non-array, and excessive IPC responses before shell-variable allocation
+- Reduced the synchronization polling rate from 700 ms to 1 second
+
 ## 1.0.6 — 2026-08-22
 
 - Made the reviewed 40-character hyprland-plugins commit literal at every fetch, checkout, verification, and registration site so automated validation can prove the source pin
