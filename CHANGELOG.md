@@ -2,6 +2,12 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.10 — 2026-08-22
+
+- Read the managed-window ledger once into a private buffer capped at 8 KiB plus one detection byte
+- Validate and consume the same snapshot bytes for pruning, convergence checks, appends, and disable transitions
+- Removed check-then-reopen structured reads of the mutable ledger path
+
 ## 1.0.9 — 2026-08-22
 
 - Pruned closed window addresses from the managed ledger on every synchronization

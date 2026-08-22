@@ -76,44 +76,62 @@ truncate_state_file() {
   validate_state_file "$path"
 }
 
-validate_managed_ledger() {
-  local bytes
+snapshot_managed_ledger() {
+  local snapshot="$1" bytes
   validate_state_file "$managed_file"
-  bytes="$(stat -c '%s' -- "$managed_file")" || die "cannot inspect managed-window ledger"
+
+  # Another same-UID process can replace or grow the managed path. Read it
+  # only once with one detection byte beyond the limit, then validate and
+  # consume these exact private bytes in every caller.
+  head -c "$((managed_max_bytes + 1))" -- "$managed_file" >"$snapshot" \
+    || die "cannot snapshot managed-window ledger"
+  chmod 600 -- "$snapshot"
+  bytes="$(stat -c '%s' -- "$snapshot")" || die "cannot inspect managed-window ledger snapshot"
   ((bytes <= managed_max_bytes)) || die "managed-window ledger exceeds $managed_max_bytes bytes"
   awk -v max="$managed_max_entries" '
       NF && ($0 !~ /^0x[0-9a-fA-F]+$/ || seen[$0]++) { invalid = 1; exit }
       NF { count++ }
       END { exit invalid || count > max }
-    ' "$managed_file" || die "managed-window ledger is invalid or exceeds $managed_max_entries entries"
+    ' "$snapshot" || die "managed-window ledger is invalid or exceeds $managed_max_entries entries"
 }
 
 prune_managed_ledger() {
-  local snapshot="$1" replacement
-  validate_managed_ledger
+  local clients_snapshot="$1" ledger_snapshot replacement
+  ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || die "cannot create managed-window ledger snapshot"
+  snapshot_managed_ledger "$ledger_snapshot"
   replacement="$(mktemp -p "$state_dir" '.managed.XXXXXX')" || die "cannot create managed-window ledger"
   chmod 600 -- "$replacement"
-  if ! jq -r --rawfile managed "$managed_file" '
+  if ! jq -r --rawfile managed "$ledger_snapshot" '
       ([.[].address] | unique) as $live
       | ($managed | split("\n") | map(select(length > 0)) | unique)[]
       | . as $address
       | select($live | index($address) != null)
-    ' <<<"$snapshot" >"$replacement"; then
-    rm -f -- "$replacement"
+    ' <<<"$clients_snapshot" >"$replacement"; then
+    rm -f -- "$ledger_snapshot" "$replacement"
     die "cannot prune managed-window ledger"
   fi
+  rm -f -- "$ledger_snapshot"
   mv -f -- "$replacement" "$managed_file"
-  validate_managed_ledger
 }
 
 append_managed_address() {
-  local address="$1"
+  local address="$1" ledger_snapshot replacement
   valid_address "$address" || return 1
-  validate_managed_ledger
-  grep -Fxq "$address" "$managed_file" && return 0
-  (( $(wc -l <"$managed_file") < managed_max_entries )) || die "managed-window ledger entry limit reached"
-  printf '%s\n' "$address" >>"$managed_file"
-  validate_managed_ledger
+  ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || die "cannot create managed-window ledger snapshot"
+  snapshot_managed_ledger "$ledger_snapshot"
+  if grep -Fxq "$address" "$ledger_snapshot"; then
+    rm -f -- "$ledger_snapshot"
+    return 0
+  fi
+  (( $(wc -l <"$ledger_snapshot") < managed_max_entries )) || {
+    rm -f -- "$ledger_snapshot"
+    die "managed-window ledger entry limit reached"
+  }
+  replacement="$(mktemp -p "$state_dir" '.managed.XXXXXX')" || die "cannot create managed-window ledger"
+  chmod 600 -- "$replacement"
+  { cat -- "$ledger_snapshot"; printf '%s\n' "$address"; } >"$replacement"
+  rm -f -- "$ledger_snapshot"
+  mv -f -- "$replacement" "$managed_file"
 }
 
 require_tools() {
@@ -260,10 +278,14 @@ monitors() {
 }
 
 managed_windows_match() {
-  local expected="$1" snapshot
-  validate_managed_ledger
-  snapshot="$(clients)" || return 1
-  jq -e --argjson expected "$expected" --rawfile managed "$managed_file" '
+  local expected="$1" clients_snapshot ledger_snapshot result=0
+  ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || return 1
+  snapshot_managed_ledger "$ledger_snapshot"
+  clients_snapshot="$(clients)" || {
+    rm -f -- "$ledger_snapshot"
+    return 1
+  }
+  jq -e --argjson expected "$expected" --rawfile managed "$ledger_snapshot" '
       ($managed | split("\n") | map(select(length > 0))) as $addresses
       | all(.[];
           .address as $address
@@ -271,7 +293,9 @@ managed_windows_match() {
             then .floating == $expected
             else true
             end)
-    ' <<<"$snapshot" >/dev/null 2>&1
+    ' <<<"$clients_snapshot" >/dev/null 2>&1 || result=$?
+  rm -f -- "$ledger_snapshot"
+  return "$result"
 }
 
 wait_for_managed_windows() {
@@ -317,15 +341,17 @@ enable_mode() {
 
 disable_mode() {
   if state_file_exists "$managed_file"; then
-    validate_managed_ledger
-    local live address
+    local live address ledger_snapshot
+    ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || die "cannot create managed-window ledger snapshot"
+    snapshot_managed_ledger "$ledger_snapshot"
     live="$(clients | jq -r '.[].address')"
     while IFS= read -r address; do
       [[ -n "$address" ]] || continue
       if grep -Fxq "$address" <<<"$live"; then
         tile_window "$address"
       fi
-    done <"$managed_file"
+    done <"$ledger_snapshot"
+    rm -f -- "$ledger_snapshot"
     wait_for_managed_windows false || die "Hyprland did not finish tiling managed windows"
   fi
   set_titlebars false
