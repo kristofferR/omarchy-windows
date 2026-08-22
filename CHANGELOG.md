@@ -2,6 +2,12 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.11 — 2026-08-22
+
+- Registered every private helper buffer for process-exit cleanup immediately after creation
+- Prevented malformed, oversized, or later-stage failures from retaining runtime temp files
+- Verified 50 repeated failed sync attempts retain zero managed-ledger snapshots
+
 ## 1.0.10 — 2026-08-22
 
 - Read the managed-window ledger once into a private buffer capped at 8 KiB plus one detection byte

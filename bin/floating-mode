@@ -9,6 +9,18 @@ managed_file="$state_dir/managed"
 lock_file="$state_dir/operation.lock"
 managed_max_bytes=8192
 managed_max_entries=256
+temporary_files=()
+
+cleanup_temporary_files() {
+  ((${#temporary_files[@]} == 0)) || rm -f -- "${temporary_files[@]}"
+}
+
+register_temporary_file() {
+  temporary_files+=("$1")
+}
+
+trap cleanup_temporary_files EXIT
+
 
 die() {
   printf 'floating-mode: %s\n' "$1" >&2
@@ -98,8 +110,10 @@ snapshot_managed_ledger() {
 prune_managed_ledger() {
   local clients_snapshot="$1" ledger_snapshot replacement
   ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || die "cannot create managed-window ledger snapshot"
+  register_temporary_file "$ledger_snapshot"
   snapshot_managed_ledger "$ledger_snapshot"
   replacement="$(mktemp -p "$state_dir" '.managed.XXXXXX')" || die "cannot create managed-window ledger"
+  register_temporary_file "$replacement"
   chmod 600 -- "$replacement"
   if ! jq -r --rawfile managed "$ledger_snapshot" '
       ([.[].address] | unique) as $live
@@ -118,6 +132,7 @@ append_managed_address() {
   local address="$1" ledger_snapshot replacement
   valid_address "$address" || return 1
   ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || die "cannot create managed-window ledger snapshot"
+  register_temporary_file "$ledger_snapshot"
   snapshot_managed_ledger "$ledger_snapshot"
   if grep -Fxq "$address" "$ledger_snapshot"; then
     rm -f -- "$ledger_snapshot"
@@ -128,6 +143,7 @@ append_managed_address() {
     die "managed-window ledger entry limit reached"
   }
   replacement="$(mktemp -p "$state_dir" '.managed.XXXXXX')" || die "cannot create managed-window ledger"
+  register_temporary_file "$replacement"
   chmod 600 -- "$replacement"
   { cat -- "$ledger_snapshot"; printf '%s\n' "$address"; } >"$replacement"
   rm -f -- "$ledger_snapshot"
@@ -240,6 +256,7 @@ set_titlebars() {
 bounded_hypr_json() {
   local resource="$1" max_bytes="$2" max_items="$3" buffer bytes
   buffer="$(mktemp -p "$state_dir" ".${resource}.XXXXXX")" || die "cannot create bounded IPC buffer"
+  register_temporary_file "$buffer"
   chmod 600 -- "$buffer"
 
   # Read at most one byte beyond the ceiling. With pipefail, a producer that
@@ -280,6 +297,7 @@ monitors() {
 managed_windows_match() {
   local expected="$1" clients_snapshot ledger_snapshot result=0
   ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || return 1
+  register_temporary_file "$ledger_snapshot"
   snapshot_managed_ledger "$ledger_snapshot"
   clients_snapshot="$(clients)" || {
     rm -f -- "$ledger_snapshot"
@@ -343,6 +361,7 @@ disable_mode() {
   if state_file_exists "$managed_file"; then
     local live address ledger_snapshot
     ledger_snapshot="$(mktemp -p "$state_dir" '.managed-read.XXXXXX')" || die "cannot create managed-window ledger snapshot"
+    register_temporary_file "$ledger_snapshot"
     snapshot_managed_ledger "$ledger_snapshot"
     live="$(clients | jq -r '.[].address')"
     while IFS= read -r address; do
