@@ -24,16 +24,15 @@ BarWidget {
     if (!statusProc.running) statusProc.running = true
   }
 
-  function setMode(want) {
+  function toggleMode() {
     if (actionProc.running) return
     busy = true
     lastError = ""
-    actionProc.command = [root.helper, want ? "on" : "off"]
+    // Toggle against the helper's atomically checked runtime marker. Basing the
+    // command on floatingMode can send the wrong action when a status poll is
+    // still reporting the previous state.
+    actionProc.command = [root.helper, "toggle"]
     actionProc.running = true
-  }
-
-  function toggleMode() {
-    setMode(!floatingMode)
   }
 
   Process {
@@ -54,7 +53,9 @@ BarWidget {
     onExited: function(code) {
       root.busy = false
       if (code !== 0 && root.lastError === "") root.lastError = "Could not change window mode"
-      root.refresh()
+      // Discard any poll that started before the action and force a new read.
+      if (statusProc.running) statusProc.running = false
+      Qt.callLater(root.refresh)
     }
   }
 

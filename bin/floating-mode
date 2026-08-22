@@ -6,6 +6,7 @@ runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$current_uid}"
 state_dir="$runtime_dir/omarchy-floating-mode"
 enabled_file="$state_dir/enabled"
 managed_file="$state_dir/managed"
+lock_file="$state_dir/operation.lock"
 
 die() {
   printf 'floating-mode: %s\n' "$1" >&2
@@ -39,11 +40,20 @@ prepare_state_dir() {
     validate_private_dir "$state_dir" "state directory"
   fi
   chmod 700 -- "$state_dir"
-  for state_path in "$enabled_file" "$managed_file"; do
+  for state_path in "$enabled_file" "$managed_file" "$lock_file"; do
     if [[ -e "$state_path" || -L "$state_path" ]]; then
       validate_state_file "$state_path"
     fi
   done
+}
+
+acquire_operation_lock() {
+  if [[ ! -e "$lock_file" && ! -L "$lock_file" ]]; then
+    (set -o noclobber; : >"$lock_file") 2>/dev/null || true
+  fi
+  validate_state_file "$lock_file"
+  exec 9<>"$lock_file"
+  flock -x 9
 }
 
 state_file_exists() {
@@ -67,6 +77,7 @@ truncate_state_file() {
 require_tools() {
   command -v hyprctl >/dev/null 2>&1 || { echo "hyprctl is required" >&2; exit 1; }
   command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
+  command -v flock >/dev/null 2>&1 || { echo "flock is required" >&2; exit 1; }
 }
 
 valid_address() {
@@ -206,6 +217,29 @@ monitors() {
   bounded_hypr_json monitors 262144 64
 }
 
+managed_windows_match() {
+  local expected="$1" snapshot
+  snapshot="$(clients)" || return 1
+  jq -e --argjson expected "$expected" --rawfile managed "$managed_file" '
+      ($managed | split("\n") | map(select(length > 0))) as $addresses
+      | all(.[];
+          .address as $address
+          | if ($addresses | index($address)) != null
+            then .floating == $expected
+            else true
+            end)
+    ' <<<"$snapshot" >/dev/null 2>&1
+}
+
+wait_for_managed_windows() {
+  local expected="$1" attempt
+  for attempt in $(seq 1 40); do
+    managed_windows_match "$expected" && return 0
+    sleep 0.025
+  done
+  return 1
+}
+
 sync_windows() {
   state_file_exists "$enabled_file" || return 0
   state_file_exists "$managed_file" || die "managed state is missing while Floating Mode is enabled"
@@ -223,6 +257,7 @@ sync_windows() {
       printf '%s\n' "$address" >>"$managed_file"
     fi
   done < <(jq -r '.[] | select(.mapped == true and .floating == false) | .address' <<<"$snapshot")
+  wait_for_managed_windows true || die "Hyprland did not finish floating managed windows"
 }
 
 enable_mode() {
@@ -248,6 +283,7 @@ disable_mode() {
         tile_window "$address"
       fi
     done <"$managed_file"
+    wait_for_managed_windows false || die "Hyprland did not finish tiling managed windows"
   fi
   set_titlebars false
   if state_file_exists "$enabled_file"; then rm -f -- "$enabled_file"; fi
@@ -257,6 +293,7 @@ disable_mode() {
 
 require_tools
 prepare_state_dir
+acquire_operation_lock
 case "${1:-}" in
   on)
     enable_mode

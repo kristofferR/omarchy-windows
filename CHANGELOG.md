@@ -2,6 +2,12 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.8 — 2026-08-22
+
+- Made bar clicks use the helper's atomic `toggle` operation instead of stale asynchronously polled UI state
+- Cancelled pre-action status polls and forced a fresh status read after each transition
+- Serialized UI actions and background synchronization with a private runtime lock
+
 ## 1.0.7 — 2026-08-22
 
 - Bounded recurring Hyprland client IPC to 1 MiB and 256 objects
