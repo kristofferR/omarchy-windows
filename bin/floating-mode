@@ -7,6 +7,8 @@ state_dir="$runtime_dir/omarchy-floating-mode"
 enabled_file="$state_dir/enabled"
 managed_file="$state_dir/managed"
 lock_file="$state_dir/operation.lock"
+managed_max_bytes=8192
+managed_max_entries=256
 
 die() {
   printf 'floating-mode: %s\n' "$1" >&2
@@ -72,6 +74,46 @@ truncate_state_file() {
   fi
   : >"$path"
   validate_state_file "$path"
+}
+
+validate_managed_ledger() {
+  local bytes
+  validate_state_file "$managed_file"
+  bytes="$(stat -c '%s' -- "$managed_file")" || die "cannot inspect managed-window ledger"
+  ((bytes <= managed_max_bytes)) || die "managed-window ledger exceeds $managed_max_bytes bytes"
+  awk -v max="$managed_max_entries" '
+      NF && ($0 !~ /^0x[0-9a-fA-F]+$/ || seen[$0]++) { invalid = 1; exit }
+      NF { count++ }
+      END { exit invalid || count > max }
+    ' "$managed_file" || die "managed-window ledger is invalid or exceeds $managed_max_entries entries"
+}
+
+prune_managed_ledger() {
+  local snapshot="$1" replacement
+  validate_managed_ledger
+  replacement="$(mktemp -p "$state_dir" '.managed.XXXXXX')" || die "cannot create managed-window ledger"
+  chmod 600 -- "$replacement"
+  if ! jq -r --rawfile managed "$managed_file" '
+      ([.[].address] | unique) as $live
+      | ($managed | split("\n") | map(select(length > 0)) | unique)[]
+      | . as $address
+      | select($live | index($address) != null)
+    ' <<<"$snapshot" >"$replacement"; then
+    rm -f -- "$replacement"
+    die "cannot prune managed-window ledger"
+  fi
+  mv -f -- "$replacement" "$managed_file"
+  validate_managed_ledger
+}
+
+append_managed_address() {
+  local address="$1"
+  valid_address "$address" || return 1
+  validate_managed_ledger
+  grep -Fxq "$address" "$managed_file" && return 0
+  (( $(wc -l <"$managed_file") < managed_max_entries )) || die "managed-window ledger entry limit reached"
+  printf '%s\n' "$address" >>"$managed_file"
+  validate_managed_ledger
 }
 
 require_tools() {
@@ -219,6 +261,7 @@ monitors() {
 
 managed_windows_match() {
   local expected="$1" snapshot
+  validate_managed_ledger
   snapshot="$(clients)" || return 1
   jq -e --argjson expected "$expected" --rawfile managed "$managed_file" '
       ($managed | split("\n") | map(select(length > 0))) as $addresses
@@ -245,6 +288,7 @@ sync_windows() {
   state_file_exists "$managed_file" || die "managed state is missing while Floating Mode is enabled"
   local snapshot monitors address
   snapshot="$(clients)"
+  prune_managed_ledger "$snapshot"
   # Monitor geometry is optional: failure must not block the floating action.
   monitors="$(monitors || printf '[]')"
   while IFS= read -r address; do
@@ -253,9 +297,7 @@ sync_windows() {
     # it as handled until floating succeeded, and retry any managed window that
     # is still reported as tiled on the next service pass.
     transition_window "$address" "$snapshot" "$monitors" || continue
-    if ! grep -Fxq "$address" "$managed_file" 2>/dev/null; then
-      printf '%s\n' "$address" >>"$managed_file"
-    fi
+    append_managed_address "$address"
   done < <(jq -r '.[] | select(.mapped == true and .floating == false) | .address' <<<"$snapshot")
   wait_for_managed_windows true || die "Hyprland did not finish floating managed windows"
 }
@@ -275,6 +317,7 @@ enable_mode() {
 
 disable_mode() {
   if state_file_exists "$managed_file"; then
+    validate_managed_ledger
     local live address
     live="$(clients | jq -r '.[].address')"
     while IFS= read -r address; do

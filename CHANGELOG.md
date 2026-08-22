@@ -2,6 +2,13 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.0.9 — 2026-08-22
+
+- Pruned closed window addresses from the managed ledger on every synchronization
+- Capped the ledger at 8 KiB and 256 unique valid Hyprland addresses
+- Atomically replaced the ledger before adding newly managed live windows
+- Validated ledger size, count, format, ownership, type, links, and permissions before every structured read
+
 ## 1.0.8 — 2026-08-22
 
 - Made bar clicks use the helper's atomic `toggle` operation instead of stale asynchronously polled UI state
