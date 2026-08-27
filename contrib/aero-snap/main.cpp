@@ -9,6 +9,7 @@
 #include <hyprland/src/config/values/types/ColorValue.hpp>
 #include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
+#include <hyprland/src/config/values/types/StringValue.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/event/EventBus.hpp>
@@ -44,14 +45,15 @@ namespace {
     HANDLE pluginHandle = nullptr;
 
     struct SConfigValues {
-        SP<Config::Values::CBoolValue>  enabled;
-        SP<Config::Values::CBoolValue>  floatingModeOnly;
-        SP<Config::Values::CIntValue>   edgeThreshold;
-        SP<Config::Values::CFloatValue> cornerRatio;
-        SP<Config::Values::CColorValue> previewColor;
-        SP<Config::Values::CColorValue> previewBorderColor;
-        SP<Config::Values::CIntValue>   previewBorderSize;
-        SP<Config::Values::CIntValue>   previewRounding;
+        SP<Config::Values::CBoolValue>   enabled;
+        SP<Config::Values::CBoolValue>   floatingModeOnly;
+        SP<Config::Values::CStringValue> columns;
+        SP<Config::Values::CIntValue>    edgeThreshold;
+        SP<Config::Values::CFloatValue>  cornerRatio;
+        SP<Config::Values::CColorValue>  previewColor;
+        SP<Config::Values::CColorValue>  previewBorderColor;
+        SP<Config::Values::CIntValue>    previewBorderSize;
+        SP<Config::Values::CIntValue>    previewRounding;
     };
 
     struct SPlacement {
@@ -167,13 +169,15 @@ namespace {
         if (!workspace || !workspace->m_space)
             return std::nullopt;
 
-        const CBox   workArea = workspace->m_space->workArea(zone == Zone::Maximize);
+        const CBox   workArea          = workspace->m_space->workArea(zone == Zone::Maximize);
+        const auto   configuredColumns = state->config.columns->value();
+        const int    columns           = AeroSnap::columnsForMonitor(toRect(monitor->logicalBox()), configuredColumns);
 
         static auto  gapsInValue   = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
         const auto*  gapsIn        = sc<Config::CCssGapData*>(gapsInValue.ptr());
         const double horizontalGap = gapsIn->m_left + gapsIn->m_right;
         const double verticalGap   = gapsIn->m_top + gapsIn->m_bottom;
-        const auto   zoneRect      = AeroSnap::rectForZone(toRect(workArea), zone, horizontalGap, verticalGap);
+        const auto   zoneRect      = AeroSnap::rectForZone(toRect(workArea), zone, horizontalGap, verticalGap, columns);
         if (!zoneRect)
             return std::nullopt;
 
@@ -320,9 +324,11 @@ namespace {
             return;
         }
 
-        const auto monitorBox = monitor->logicalBox();
-        const auto zone       = AeroSnap::zoneAt({cursor.x, cursor.y}, toRect(monitorBox), state->config.edgeThreshold->value(), state->config.cornerRatio->value());
-        const auto placement  = placementFor(target, monitor, zone);
+        const auto monitorBox        = monitor->logicalBox();
+        const auto configuredColumns = state->config.columns->value();
+        const int  columns           = AeroSnap::columnsForMonitor(toRect(monitorBox), configuredColumns);
+        const auto zone      = AeroSnap::zoneAt({cursor.x, cursor.y}, toRect(monitorBox), state->config.edgeThreshold->value(), state->config.cornerRatio->value(), columns);
+        const auto placement = placementFor(target, monitor, zone);
         if (!placement) {
             clearPreview();
             state->drag->candidate.reset();
@@ -361,6 +367,8 @@ namespace {
 
         if (value == "left")
             return Zone::Left;
+        if (value == "center")
+            return Zone::Center;
         if (value == "right")
             return Zone::Right;
         if (value == "top-left")
@@ -400,7 +408,9 @@ namespace {
 
         const auto zone = parseZone(argument);
         if (!zone)
-            return {.success = false, .error = "expected left, right, top-left, top-right, bottom-left, bottom-right, maximize, or restore"};
+            return {.success = false,
+                    .error   = "expected left, center, right, top-left, top-right, "
+                               "bottom-left, bottom-right, maximize, or restore"};
 
         const auto monitor   = window->m_monitor.lock();
         const auto placement = placementFor(window->m_target, monitor, *zone);
@@ -490,6 +500,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     state->config.enabled = makeShared<Config::Values::CBoolValue>("plugin:omarchy_windows_snap:enabled", "Enable Aero-style drag snap zones", true);
     state->config.floatingModeOnly =
         makeShared<Config::Values::CBoolValue>("plugin:omarchy_windows_snap:floating_mode_only", "Activate only while Omarchy Floating Mode is on", true);
+    state->config.columns =
+        makeShared<Config::Values::CStringValue>("plugin:omarchy_windows_snap:columns", "Full-height snap columns: auto, 2, or 3", "auto",
+                                                 Config::Values::SStringValueOptions{.validator = [](const Config::STRING& value) -> std::expected<void, std::string> {
+                                                     if (value == "auto" || value == "2" || value == "3")
+                                                         return {};
+                                                     return std::unexpected("expected auto, 2, or 3");
+                                                 }});
     state->config.edgeThreshold = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:edge_threshold", "Logical pixels from a monitor edge that activate a zone", 12,
                                                                         Config::Values::SIntValueOptions{.min = 1, .max = 128});
     state->config.cornerRatio   = makeShared<Config::Values::CFloatValue>("plugin:omarchy_windows_snap:corner_ratio", "Fraction of each monitor edge reserved for corner zones",
@@ -503,6 +520,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.enabled);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.floatingModeOnly);
+    HyprlandAPI::addConfigValueV2(pluginHandle, state->config.columns);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.edgeThreshold);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.cornerRatio);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewColor);

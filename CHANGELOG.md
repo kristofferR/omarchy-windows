@@ -5,7 +5,9 @@ All notable changes to Floating Mode are documented here.
 ## 1.1.0 — 2026-08-27
 
 - Added native magnetic snapping between floating windows and monitor edges
-- Added Aero-style drag zones for left/right halves, four quarters, and top-edge maximization
+- Added configurable two- or three-column full-height snapping, defaulting to three columns on monitors wider than 16:9
+- Added a bottom-center drag zone and `center` dispatcher action for the middle column
+- Preserved four quarter zones and top-edge maximization in either column layout
 - Added a compositor-rendered snap preview that appears only during an active drag
 - Reused Hyprland's logical work areas, reserved regions, configured gaps, decoration extents, and window size constraints
 - Restored each window's pre-snap size when it is dragged away from a snapped position

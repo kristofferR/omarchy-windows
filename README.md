@@ -19,7 +19,7 @@ One click turns the current desktop into a calm, free-form workspace. Windows ke
 - Exits maximized or fullscreen state before restoring managed windows to tiling
 - Adds a compact native titlebar for dragging, maximizing, and closing windows
 - Magnetically aligns freely placed windows with nearby windows and monitor edges
-- Snaps dragged windows into side halves, corner quarters, or maximization with a live preview
+- Snaps dragged windows into full-height columns, corner quarters, or maximization with a live preview
 - Restores a window's previous size when it is dragged away from a snap zone
 
 The result is simple: tiling when you want structure, floating when you want space and context.
@@ -77,13 +77,20 @@ Click the overlapping-windows icon in the Omarchy bar:
 
 In Floating Mode, use either the native titlebar or `Super`+drag to move a window:
 
-- Drag to the left or right edge for a half-screen window
+- Drag to the left or right edge for an outer full-height column
+- On monitors wider than 16:9, drag to the bottom center for the middle column
 - Drag into a corner for a quarter-screen window
 - Drag to the top center to maximize
 - Move away from an edge before releasing to cancel the snap
 - Drag a snapped window away to recover its pre-snap size
 
 The blue preview is drawn by Hyprland only while a valid snap zone is active. The square titlebar button toggles maximization; the close button closes the window and shows a red circular background on hover.
+
+Full-height snapping uses `columns = "auto"` by default: monitors wider than 16:9 get three columns, while 16:9 and narrower monitors keep two. Corner zones remain quarters in either layout. To force one layout on every monitor, add this after `require("hypr.floating-mode")` in `~/.config/hypr/hyprland.lua`:
+
+```lua
+hl.config({ plugin = { omarchy_windows_snap = { columns = "2" } } }) -- or "3"
+```
 
 Hyprland's native magnetic snap is also enabled, so manually placed floating windows align to nearby windows and monitor edges without being resized.
 
@@ -93,12 +100,13 @@ The native plugin exposes the same geometry engine to Lua. Because the plugin is
 
 ```lua
 hl.bind("SUPER + ALT + LEFT", hl.plugin.omarchy_windows_snap.snap("left"))
+hl.bind("SUPER + ALT + C", hl.plugin.omarchy_windows_snap.snap("center"))
 hl.bind("SUPER + ALT + RIGHT", hl.plugin.omarchy_windows_snap.snap("right"))
 hl.bind("SUPER + ALT + UP", hl.plugin.omarchy_windows_snap.snap("maximize"))
 hl.bind("SUPER + ALT + DOWN", hl.plugin.omarchy_windows_snap.snap("restore"))
 ```
 
-Available actions are `left`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`, `maximize`, and `restore`. They intentionally have no default bindings, avoiding conflicts with Omarchy's existing workspace and window controls.
+Available actions are `left`, `center`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`, `maximize`, and `restore`. `center` requires the active monitor to use three columns. The actions intentionally have no default bindings, avoiding conflicts with Omarchy's existing workspace and window controls.
 
 Runtime state is kept in `$XDG_RUNTIME_DIR/omarchy-floating-mode` and disappears at logout. No window content is read or stored.
 The runtime directory must be private and owned by the current user; unsafe directories, symlinks, and state files are rejected before use.

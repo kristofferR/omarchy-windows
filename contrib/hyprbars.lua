@@ -42,6 +42,9 @@ hl.config({
     omarchy_windows_snap = {
       enabled = true,
       floating_mode_only = true,
+      -- "auto" uses three full-height columns above 16:9 and two otherwise.
+      -- Set this to "2" or "3" to force the same layout on every monitor.
+      columns = "auto",
       edge_threshold = 12,
       corner_ratio = 0.25,
       preview_color = "rgba(3b82f638)",
