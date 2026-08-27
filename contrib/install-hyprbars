@@ -124,10 +124,6 @@ plugin_version="$(jq -er '.version | select(type == "string" and test("^[0-9A-Za
   echo "manifest.json has an invalid plugin version." >&2
   exit 1
 }
-snap_source_hash="$(sha256sum "$snap_source/main.cpp" "$snap_source/geometry.hpp" "$snap_source/Makefile" | sha256sum | cut -c1-16)"
-snap_filename="omarchy-windows-snap-$plugin_version-$snap_source_hash.so"
-snap_plugin="$snap_install_dir/$snap_filename"
-
 hyprpm update
 if ! hyprpm list 2>/dev/null | grep -q 'Plugin hyprbars'; then
   hyprpm add https://github.com/hyprwm/hyprland-plugins 7644cecdb947060682891a0db2a0cdc5c0b9e704
@@ -146,6 +142,9 @@ git -C "$build_dir/hyprland-plugins" checkout --detach 7644cecdb947060682891a0db
 git -C "$build_dir/hyprland-plugins" apply "$plugin_dir/patches/hyprbars-button-hover.patch"
 make -C "$build_dir/hyprland-plugins/hyprbars"
 make -C "$snap_source" BUILD_DIR="$build_dir/aero-snap" test all
+snap_binary_sha256="$(sha256sum "$build_dir/aero-snap/omarchy-windows-snap.so" | cut -d' ' -f1)"
+snap_filename="omarchy-windows-snap-$plugin_version-${snap_binary_sha256:0:16}.so"
+snap_plugin="$snap_install_dir/$snap_filename"
 
 prepare_private_dir "$state_home" "installer state directory"
 previous_snap_plugin="$(read_snap_plugin_path)"
@@ -159,15 +158,51 @@ sudo install -m755 "$build_dir/hyprland-plugins/hyprbars/hyprbars.so" "$cache_pl
 hyprpm enable hyprbars
 
 prepare_private_dir "$snap_install_dir" "snap module directory"
-install -m755 "$build_dir/aero-snap/omarchy-windows-snap.so" "$snap_plugin"
+snap_plugin_installed=false
+module_backup="$build_dir/floating-mode.lua.previous"
+module_was_present=false
+require_was_present=false
+if [[ -e "$module_file" || -L "$module_file" ]]; then
+  [[ -f "$module_file" && ! -L "$module_file" ]] || die "unsafe existing Hyprland module: $module_file"
+  install -m600 "$module_file" "$module_backup"
+  module_was_present=true
+fi
+if grep -Fxq "$require_line" "$hyprland_file"; then
+  require_was_present=true
+fi
+
+if [[ -e "$snap_plugin" || -L "$snap_plugin" ]]; then
+  [[ -f "$snap_plugin" && ! -L "$snap_plugin" ]] || die "unsafe existing snap module: $snap_plugin"
+  [[ "$(sha256sum "$snap_plugin" | cut -d' ' -f1)" == "$snap_binary_sha256" ]] || die "snap module hash collision: $snap_plugin"
+else
+  install -m755 "$build_dir/aero-snap/omarchy-windows-snap.so" "$snap_plugin"
+  snap_plugin_installed=true
+fi
 sed "s/@SNAP_PLUGIN_FILENAME@/$snap_filename/g" "$plugin_dir/contrib/hyprbars.lua" >"$build_dir/floating-mode.lua"
 install -Dm644 "$build_dir/floating-mode.lua" "$module_file"
 grep -Fxq "$require_line" "$hyprland_file" || printf '\n%s\n' "$require_line" >>"$hyprland_file"
 
-hyprctl reload
-errors="$(hyprctl configerrors)"
+reload_ok=true
+hyprctl reload || reload_ok=false
+if ! errors="$(hyprctl configerrors)"; then
+  errors="hyprctl configerrors failed"
+fi
 printf '%s\n' "$errors"
-[[ -z "$errors" ]] || exit 1
+if [[ "$reload_ok" != true || -n "$errors" ]]; then
+  if [[ "$module_was_present" == true ]]; then
+    install -m644 "$module_backup" "$module_file"
+  else
+    rm -f -- "$module_file"
+  fi
+  if [[ "$require_was_present" != true ]]; then
+    sed -i '\|^require("hypr\.floating-mode")$|d' "$hyprland_file"
+  fi
+  hyprctl reload >/dev/null 2>&1 || true
+  if [[ "$snap_plugin_installed" == true && -f "$snap_plugin" && ! -L "$snap_plugin" ]]; then
+    rm -f -- "$snap_plugin"
+  fi
+  die "Hyprland rejected the new configuration; restored the previous module"
+fi
 
 if [[ -n "$previous_snap_plugin" && "$previous_snap_plugin" != "$snap_plugin" && "$previous_snap_plugin" == "$snap_install_dir"/omarchy-windows-snap-*.so &&
   -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then

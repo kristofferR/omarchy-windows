@@ -43,7 +43,7 @@ namespace AeroSnap {
         if (monitor.w <= 0 || monitor.h <= 0 || edgeThreshold < 0)
             return Zone::None;
 
-        const auto ratio          = std::clamp(cornerRatio, 0.0, 0.5);
+        const auto ratio          = std::clamp(cornerRatio, 0.0, 0.45);
         const bool nearLeft       = cursor.x <= monitor.x + edgeThreshold;
         const bool nearRight      = cursor.x >= monitor.x + monitor.w - edgeThreshold;
         const bool nearTop        = cursor.y <= monitor.y + edgeThreshold;

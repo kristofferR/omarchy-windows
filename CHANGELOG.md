@@ -13,6 +13,11 @@ All notable changes to Floating Mode are documented here.
 - Restored each window's pre-snap size when it is dragged away from a snapped position
 - Added the `hl.plugin.omarchy_windows_snap.snap(...)` dispatcher factory for optional keyboard bindings
 - Kept Aero zones dormant outside Floating Mode without polling
+- Discarded stale pre-snap geometry after manual resizing, repositioning, or leaving Floating Mode
+- Restored drag-away geometry correctly from maximized snaps and released event listeners during plugin unload
+- Checked the Floating Mode marker once per drag and preserved top-edge maximize across the full corner-ratio range
+- Rolled back the installed snap module and Lua configuration when Hyprland rejects an update
+- Derived module filenames from the compiled binary so an active shared object is never overwritten in place
 - Added standalone ultrawide geometry tests and content-addressed native-module updates
 
 ## 1.0.12 — 2026-08-22

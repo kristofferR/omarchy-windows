@@ -41,6 +41,7 @@ int main() {
     expect(AeroSnap::zoneAt(Point{0, 576}, ultrawide, 12, 0.25, 3) == Zone::Left, "left edge selects the outer column");
     expect(AeroSnap::zoneAt(Point{4095, 100}, ultrawide, 12, 0.25, 3) == Zone::TopRight, "side-edge corner bands are generous");
     expect(AeroSnap::zoneAt(Point{2048, 0}, ultrawide, 12, 0.25, 3) == Zone::Maximize, "top center maximizes");
+    expect(AeroSnap::zoneAt(Point{2048, 0}, ultrawide, 12, 0.5, 3) == Zone::Maximize, "the maximum corner ratio preserves a maximize band");
     expect(AeroSnap::zoneAt(Point{2048, 1151}, ultrawide, 12, 0.25, 3) == Zone::Center, "bottom center selects the middle column");
     expect(AeroSnap::zoneAt(Point{2048, 1151}, ultrawide, 12, 0.25, 2) == Zone::None, "two-column mode leaves bottom center untouched");
     expect(AeroSnap::zoneAt(Point{500, 500}, ultrawide, 12, 0.25, 3) == Zone::None, "interior movement is untouched");

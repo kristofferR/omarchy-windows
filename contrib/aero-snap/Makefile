@@ -1,12 +1,14 @@
-ifeq ($(CXX),g++)
-    EXTRA_FLAGS = --no-gnu-unique
-    NARROWING_FLAG = -Wno-narrowing
-else
+CXX ?= g++
+IS_CLANG = $(shell $(CXX) --version 2>/dev/null | grep -qi clang && echo true)
+
+ifeq ($(IS_CLANG),true)
     EXTRA_FLAGS =
     NARROWING_FLAG = -Wno-c++11-narrowing
+else
+    EXTRA_FLAGS = -fno-gnu-unique
+    NARROWING_FLAG = -Wno-narrowing
 endif
 
-CXX ?= g++
 CXXFLAGS ?= -O2
 PLUGIN_FLAGS = -shared -fPIC -std=c++23 -Wall -Wextra -Wpedantic $(NARROWING_FLAG) -Wno-unused-parameter -Wno-missing-field-initializers
 TEST_FLAGS = -std=c++23 -Wall -Wextra -Wpedantic

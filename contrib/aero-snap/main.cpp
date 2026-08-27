@@ -72,12 +72,15 @@ namespace {
     struct SSnapRecord {
         PHLWINDOWREF window;
         CBox         restoreBox;
+        CBox         snappedBox;
+        Zone         zone = Zone::None;
     };
 
     struct SDragState {
         SP<Layout::ITarget>       target;
         CBox                      startBox;
         std::optional<SPlacement> candidate;
+        bool                      modeActive = false;
     };
 
     struct SPluginState {
@@ -87,6 +90,11 @@ namespace {
         std::optional<SDragState> drag;
         std::vector<SSnapRecord>  records;
         UP<SEventLoopDoLaterLock> pendingApply;
+        CHyprSignalListener       mouseMoveListener;
+        CHyprSignalListener       mouseButtonListener;
+        CHyprSignalListener       renderListener;
+        CHyprSignalListener       windowDestroyListener;
+        CHyprSignalListener       windowFloatingListener;
     };
 
     UP<SPluginState> state;
@@ -137,19 +145,48 @@ namespace {
         return found == state->records.end() ? nullptr : &*found;
     }
 
-    void rememberRestoreBox(const PHLWINDOW& window, const CBox& box) {
-        if (recordFor(window))
+    void rememberSnap(const PHLWINDOW& window, const CBox& restoreBox, const CBox& snappedBox, const Zone zone) {
+        if (const auto record = recordFor(window)) {
+            record->snappedBox = snappedBox;
+            record->zone       = zone;
             return;
+        }
 
-        state->records.push_back({window, box});
+        state->records.push_back({window, restoreBox, snappedBox, zone});
     }
 
     void forgetRestoreBox(const PHLWINDOW& window) {
         std::erase_if(state->records, [&](const auto& record) { return record.window.lock() == window; });
     }
 
+    SSnapRecord* currentSnapRecord(const SP<Layout::ITarget>& target, const bool allowMoved) {
+        if (!target || !Desktop::View::validMapped(target->window()))
+            return nullptr;
+
+        const auto window = target->window();
+        const auto record = recordFor(window);
+        if (!record)
+            return nullptr;
+
+        bool matches = false;
+        if (record->zone == Zone::Maximize) {
+            matches = Fullscreen::controller()->isFullscreen(window, Fullscreen::FSMODE_MAXIMIZED);
+        } else {
+            const CBox current = target->position();
+            matches            = current.w == record->snappedBox.w && current.h == record->snappedBox.h;
+            if (matches && !allowMoved)
+                matches = current.x == record->snappedBox.x && current.y == record->snappedBox.y;
+        }
+
+        if (matches)
+            return record;
+
+        forgetRestoreBox(window);
+        return nullptr;
+    }
+
     bool floatingModeActive() {
-        if (!state->config.enabled->value())
+        if (!state || !state->config.enabled->value())
             return false;
         if (!state->config.floatingModeOnly->value())
             return true;
@@ -233,10 +270,10 @@ namespace {
             return;
 
         const auto window = target->window();
-        rememberRestoreBox(window, restoreBox);
 
         if (placement.zone == Zone::Maximize) {
             Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_MAXIMIZED);
+            rememberSnap(window, restoreBox, placement.previewBox, placement.zone);
             return;
         }
 
@@ -246,11 +283,12 @@ namespace {
         g_layoutManager->setTargetGeom(placement.clientBox, target);
         target->warpPositionSize();
         target->damageEntire();
+        rememberSnap(window, restoreBox, placement.clientBox, placement.zone);
     }
 
     bool restoreSnappedDrag(const SP<Layout::ITarget>& target, const Vector2D cursor, Event::SCallbackInfo& info) {
         const auto window = target->window();
-        const auto record = recordFor(window);
+        const auto record = currentSnapRecord(target, true);
         if (!record)
             return false;
 
@@ -277,13 +315,15 @@ namespace {
         };
         anchoredRestore.round();
 
+        if (Fullscreen::controller()->isFullscreen(window))
+            Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE);
         forgetRestoreBox(window);
         clearPreview();
         g_layoutManager->endDragTarget();
         g_layoutManager->setTargetGeom(anchoredRestore, target);
         target->warpPositionSize();
         g_layoutManager->beginDragTarget(target, MBIND_MOVE);
-        state->drag    = SDragState{target, anchoredRestore, std::nullopt};
+        state->drag    = SDragState{target, anchoredRestore, std::nullopt, true};
         info.cancelled = true;
         return true;
     }
@@ -294,19 +334,25 @@ namespace {
     }
 
     void onMouseMove(const Vector2D cursor, Event::SCallbackInfo& info) {
+        if (!state)
+            return;
+
         const auto& controller = g_layoutManager->dragController();
         const auto  target     = controller->target();
+        if (target && controller->mode() != MBIND_MOVE && Desktop::View::validMapped(target->window()))
+            forgetRestoreBox(target->window());
         if (!target || controller->mode() != MBIND_MOVE || controller->draggingTiled() || !target->floating() || !Desktop::View::validMapped(target->window())) {
             resetDrag();
             return;
         }
-        if (!floatingModeActive()) {
-            resetDrag();
-            return;
-        }
-
         if (!state->drag || state->drag->target != target)
-            state->drag = SDragState{target, target->position(), std::nullopt};
+            state->drag = SDragState{target, target->position(), std::nullopt, floatingModeActive()};
+
+        if (!state->drag->modeActive)
+            return;
+
+        if (!controller->dragThresholdReached())
+            currentSnapRecord(target, false);
 
         if (controller->dragThresholdReached() && restoreSnappedDrag(target, cursor, info))
             return;
@@ -340,7 +386,7 @@ namespace {
     }
 
     void onMouseButton(const IPointer::SButtonEvent event) {
-        if (event.state != WL_POINTER_BUTTON_STATE_RELEASED || event.button != BTN_LEFT || !state->drag)
+        if (!state || event.state != WL_POINTER_BUTTON_STATE_RELEASED || event.button != BTN_LEFT || !state->drag)
             return;
 
         const auto drag = *state->drag;
@@ -393,7 +439,7 @@ namespace {
             return {.success = false, .error = "omarchy-snap requires a focused floating window"};
 
         if (argument == "restore") {
-            const auto record = recordFor(window);
+            const auto record = currentSnapRecord(window->m_target, false);
             if (!record)
                 return {.success = false, .error = "focused window has no saved pre-snap geometry"};
 
@@ -445,7 +491,7 @@ namespace {
     }
 
     void onRenderStage(const eRenderStage stageValue) {
-        if (stageValue != RENDER_POST_WINDOWS || !state->preview)
+        if (!state || stageValue != RENDER_POST_WINDOWS || !state->preview)
             return;
 
         const auto monitor = g_pHyprRenderer->renderData().pMonitor.lock();
@@ -510,7 +556,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     state->config.edgeThreshold = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:edge_threshold", "Logical pixels from a monitor edge that activate a zone", 12,
                                                                         Config::Values::SIntValueOptions{.min = 1, .max = 128});
     state->config.cornerRatio   = makeShared<Config::Values::CFloatValue>("plugin:omarchy_windows_snap:corner_ratio", "Fraction of each monitor edge reserved for corner zones",
-                                                                          0.25F, Config::Values::SFloatValueOptions{.min = 0.05F, .max = 0.5F});
+                                                                          0.25F, Config::Values::SFloatValueOptions{.min = 0.05F, .max = 0.45F});
     state->config.previewColor  = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_color", "Snap preview fill color", 0x383b82f6);
     state->config.previewBorderColor = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_border_color", "Snap preview border color", 0xcc60a5fa);
     state->config.previewBorderSize  = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_border_size", "Snap preview border size", 2,
@@ -528,15 +574,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewBorderSize);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewRounding);
 
-    static auto mouseMoveListener     = Event::bus()->m_events.input.mouse.move.listen([](Vector2D cursor, Event::SCallbackInfo& info) { onMouseMove(cursor, info); });
-    static auto mouseButtonListener   = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent event, Event::SCallbackInfo&) { onMouseButton(event); });
-    static auto renderListener        = Event::bus()->m_events.render.stage.listen([](eRenderStage stageValue) { onRenderStage(stageValue); });
-    static auto windowDestroyListener = Event::bus()->m_events.window.destroy.listen([](PHLWINDOWREF window) {
+    state->mouseMoveListener      = Event::bus()->m_events.input.mouse.move.listen([](Vector2D cursor, Event::SCallbackInfo& info) { onMouseMove(cursor, info); });
+    state->mouseButtonListener    = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent event, Event::SCallbackInfo&) { onMouseButton(event); });
+    state->renderListener         = Event::bus()->m_events.render.stage.listen([](eRenderStage stageValue) { onRenderStage(stageValue); });
+    state->windowDestroyListener  = Event::bus()->m_events.window.destroy.listen([](PHLWINDOWREF window) {
         if (!state)
             return;
         std::erase_if(state->records, [&](const auto& record) { return record.window == window; });
         if (state->drag && state->drag->target && state->drag->target->window() == window.lock())
             resetDrag();
+    });
+    state->windowFloatingListener = Event::bus()->m_events.window.floating.listen([](PHLWINDOW window) {
+        if (state && Desktop::View::validMapped(window) && window->m_target && !window->m_target->floating())
+            forgetRestoreBox(window);
     });
 
     if (!HyprlandAPI::addDispatcherV2(pluginHandle, "omarchy-snap", snapDispatcher))
@@ -554,6 +604,11 @@ APICALL EXPORT void PLUGIN_EXIT() {
 
     clearPreview();
     state->pendingApply.reset();
+    state->mouseMoveListener.reset();
+    state->mouseButtonListener.reset();
+    state->renderListener.reset();
+    state->windowDestroyListener.reset();
+    state->windowFloatingListener.reset();
     HyprlandAPI::removeLuaFunction(pluginHandle, "omarchy_windows_snap", "snap");
     HyprlandAPI::removeDispatcher(pluginHandle, "omarchy-snap");
     state.reset();
