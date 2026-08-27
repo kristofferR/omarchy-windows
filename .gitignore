@@ -1,3 +1,5 @@
 *.swp
 *~
 .worktrees/
+contrib/aero-snap/*.so
+contrib/aero-snap/geometry-test

@@ -16,7 +16,7 @@ _No response_
 
 ### Maintainer notes
 
-Floating Mode adds an instant tiled-to-floating workflow for large and ultrawide monitors. It preserves useful window placement, centers lone and newly opened applications with comfortable margins, and restores only windows it managed. Runtime operation is local and unprivileged. Its explicit one-time installer builds the official hyprbars source commit `7644cecdb947060682891a0db2a0cdc5c0b9e704` pinned in the installer, applies a reviewable hover-only patch, saves the original module, and makes one reversible Lua configuration addition.
+Floating Mode adds an instant tiled-to-floating workflow for large and ultrawide monitors. It preserves useful window placement, centers new applications, and restores only windows it managed. Native magnetic alignment and Aero-style half, quarter, and maximize drag zones make floating windows practical without a second window manager. Runtime operation is local and unprivileged. Its explicit one-time installer builds the pinned official hyprbars source plus the repository's MIT-licensed snap module for the installed Hyprland ABI, runs geometry tests, saves the original hyprbars module, and makes one reversible Lua configuration addition.
 
 ### Submission checklist
 - [ ] The GitHub repository is public. Complete this after the first push.

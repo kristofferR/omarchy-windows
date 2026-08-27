@@ -18,6 +18,9 @@ One click turns the current desktop into a calm, free-form workspace. Windows ke
 - Leaves windows that were already floating untouched when returning to tiled mode
 - Exits maximized or fullscreen state before restoring managed windows to tiling
 - Adds a compact native titlebar for dragging, maximizing, and closing windows
+- Magnetically aligns freely placed windows with nearby windows and monitor edges
+- Snaps dragged windows into side halves, corner quarters, or maximization with a live preview
+- Restores a window's previous size when it is dragged away from a snap zone
 
 The result is simple: tiling when you want structure, floating when you want space and context.
 
@@ -33,16 +36,16 @@ The result is simple: tiling when you want structure, floating when you want spa
 
 These runtime components are included with a standard current Omarchy installation.
 
-### One-time titlebar build
+### One-time native integration build
 
-The native titlebar uses the official Hyprland `hyprbars` plugin with a small bundled hover-background patch. Its installer requires:
+The titlebar uses the official Hyprland `hyprbars` plugin with a small bundled hover-background patch. Aero-style snap zones use the bundled MIT-licensed `omarchy-windows-snap` Hyprland plugin. The installer requires:
 
 - Internet access to GitHub
 - An interactive terminal
 - `hyprpm`, `git`, `make`, `cmake`, `cpio`, `pkg-config`, `gcc`, and `g++`
 - `sudo` permission to replace the cached `hyprbars.so`
 
-The installer checks every required command before making changes. It builds the reviewed upstream commit `7644cecdb947060682891a0db2a0cdc5c0b9e704` for the installed Hyprland ABI, saves the original module, and restores it during uninstall.
+The installer checks every required command before making changes. It builds both modules for the installed Hyprland ABI, verifies the snap geometry tests, saves the original hyprbars module, and restores it during uninstall. The upstream hyprbars source is pinned to reviewed commit `7644cecdb947060682891a0db2a0cdc5c0b9e704`.
 
 On a minimal Arch-based installation, missing build tools can be installed with:
 
@@ -72,7 +75,30 @@ Click the overlapping-windows icon in the Omarchy bar:
 - Highlighted icon: Floating Mode is active
 - Click again: managed windows return directly to tiling
 
-In Floating Mode, use the native titlebar to drag a window. The square button toggles maximization; the close button closes the window and shows a red circular background on hover.
+In Floating Mode, use either the native titlebar or `Super`+drag to move a window:
+
+- Drag to the left or right edge for a half-screen window
+- Drag into a corner for a quarter-screen window
+- Drag to the top center to maximize
+- Move away from an edge before releasing to cancel the snap
+- Drag a snapped window away to recover its pre-snap size
+
+The blue preview is drawn by Hyprland only while a valid snap zone is active. The square titlebar button toggles maximization; the close button closes the window and shows a red circular background on hover.
+
+Hyprland's native magnetic snap is also enabled, so manually placed floating windows align to nearby windows and monitor edges without being resized.
+
+### Optional keyboard bindings
+
+The native plugin exposes the same geometry engine to Lua. Because the plugin is loaded by `require("hypr.floating-mode")`, add any bindings you want below that line near the end of `~/.config/hypr/hyprland.lua`:
+
+```lua
+hl.bind("SUPER + ALT + LEFT", hl.plugin.omarchy_windows_snap.snap("left"))
+hl.bind("SUPER + ALT + RIGHT", hl.plugin.omarchy_windows_snap.snap("right"))
+hl.bind("SUPER + ALT + UP", hl.plugin.omarchy_windows_snap.snap("maximize"))
+hl.bind("SUPER + ALT + DOWN", hl.plugin.omarchy_windows_snap.snap("restore"))
+```
+
+Available actions are `left`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`, `maximize`, and `restore`. They intentionally have no default bindings, avoiding conflicts with Omarchy's existing workspace and window controls.
 
 Runtime state is kept in `$XDG_RUNTIME_DIR/omarchy-floating-mode` and disappears at logout. No window content is read or stored.
 The runtime directory must be private and owned by the current user; unsafe directories, symlinks, and state files are rejected before use.
@@ -85,13 +111,13 @@ Update community plugins with Omarchy:
 omarchy plugin update --yes
 ```
 
-If an update changes `contrib/hyprbars.lua` or the bundled native patch, rerun:
+If an update changes `contrib/hyprbars.lua`, `contrib/aero-snap/`, or the bundled hyprbars patch, rerun:
 
 ```bash
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars
 ```
 
-Because Hyprland plugins are ABI-sensitive, rerun the installer after a Hyprland update if `hyprbars` no longer loads.
+Because Hyprland plugins are ABI-sensitive, rerun the installer after a Hyprland update if either native module no longer loads.
 
 ## Removal
 
@@ -102,7 +128,7 @@ First click the bar button to return to tiled mode. Then run:
 omarchy plugin remove io.github.rawritude.floating-mode --yes
 ```
 
-The uninstall step removes the added Lua configuration, restores the original `hyprbars.so`, restores its previous enabled state, reloads Hyprland, and removes the plugin's installer state.
+The uninstall step removes the added Lua configuration and snap module, restores the original `hyprbars.so` and its previous enabled state, reloads Hyprland, and removes the plugin's installer state.
 
 If the widget is unavailable while Floating Mode is still active, restore tiling manually before removing the plugin:
 
@@ -118,6 +144,8 @@ Only window addresses changed by Floating Mode are recorded. When the mode is di
 
 Titlebars are rendered inside the compositor by the official [`hyprbars`](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars) plugin. The bundled [`hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch) adds configurable circular hover backgrounds while keeping the button symbols permanently visible.
 
+The bundled `omarchy-windows-snap` plugin listens to Hyprland's drag events rather than polling. It detects zones against each monitor's logical coordinates, uses Hyprland's current work area and gaps, accounts for titlebar and input extents, and applies geometry only when the drag ends. Its preview is a compositor render-pass rectangle, so there is no continuously animating overlay process. The Floating Mode runtime marker is checked only during drag input.
+
 ## Privacy and security
 
 - Runtime operation is local and unprivileged
@@ -125,7 +153,8 @@ Titlebars are rendered inside the compositor by the official [`hyprbars`](https:
 - No telemetry, analytics, network requests, or background downloads are used at runtime
 - Network access occurs only when the explicit titlebar installer invokes `hyprpm` and clones the official Hyprland plugins repository
 - `sudo` is used only to install or restore `/var/cache/hyprpm/$USER/hyprland-plugins/hyprbars.so`
-- Persistent configuration is limited to `~/.config/hypr/floating-mode.lua`, one `require(...)` line, and reversible state below `$XDG_STATE_HOME`
+- The Aero snap module is built from this repository's MIT-licensed source and installed without privileges below `$XDG_DATA_HOME/omarchy-floating-mode`
+- Persistent configuration is limited to `~/.config/hypr/floating-mode.lua`, one `require(...)` line, the user-local snap module, and reversible state below `$XDG_STATE_HOME`
 
 ## Development and validation
 
@@ -133,6 +162,7 @@ Titlebars are rendered inside the compositor by the official [`hyprbars`](https:
 omarchy plugin validate .
 qmllint -I /usr/share/omarchy/shell BarWidget.qml Service.qml
 bash -n bin/floating-mode contrib/install-hyprbars
+make -C contrib/aero-snap test all
 ```
 
 For a local test installation, clone or copy the repository to:

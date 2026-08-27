@@ -3,21 +3,28 @@ set -euo pipefail
 
 plugin_id=io.github.rawritude.floating-mode
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-floating-mode"
 plugin_dir="$config_home/omarchy/plugins/$plugin_id"
 hypr_dir="$config_home/hypr"
 module_file="$hypr_dir/floating-mode.lua"
 hyprland_file="$hypr_dir/hyprland.lua"
 require_line='require("hypr.floating-mode")'
+snap_source="$plugin_dir/contrib/aero-snap"
+snap_install_dir="$data_home/omarchy-floating-mode"
+snap_path_state="$state_home/snap-plugin-path"
 cache_dir="/var/cache/hyprpm/$USER/hyprland-plugins"
 cache_plugin="$cache_dir/hyprbars.so"
 cache_state="$cache_dir/state.toml"
 backup_plugin="$state_home/hyprbars.so.official"
 enabled_state="$state_home/hyprbars-was-enabled"
 build_dir=""
+snap_state_temp=""
+current_uid="$(id -u)"
 
 cleanup() {
   [[ -z "$build_dir" ]] || rm -rf -- "$build_dir"
+  [[ -z "$snap_state_temp" ]] || rm -f -- "$snap_state_temp"
 }
 trap cleanup EXIT
 
@@ -35,6 +42,32 @@ require_commands() {
   }
 }
 
+die() {
+  printf 'install-hyprbars: %s\n' "$1" >&2
+  exit 1
+}
+
+prepare_private_dir() {
+  local path="$1" label="$2" owner
+  mkdir -p -m 700 -- "$path" || die "cannot create $label: $path"
+  [[ -d "$path" && ! -L "$path" ]] || die "$label is not a real directory: $path"
+  owner="$(stat -c '%u' -- "$path")" || die "cannot inspect $label: $path"
+  [[ "$owner" == "$current_uid" ]] || die "$label is not owned by the current user: $path"
+  chmod 700 -- "$path"
+}
+
+read_snap_plugin_path() {
+  local path lines=()
+  [[ -e "$snap_path_state" || -L "$snap_path_state" ]] || return 0
+  [[ -f "$snap_path_state" && ! -L "$snap_path_state" ]] || die "unsafe snap module state: $snap_path_state"
+  [[ "$(stat -c '%u' -- "$snap_path_state")" == "$current_uid" ]] || die "snap module state is not owned by the current user"
+  mapfile -t lines <"$snap_path_state"
+  ((${#lines[@]} == 1)) || die "snap module state must contain exactly one path"
+  path="${lines[0]}"
+  [[ "$path" == "$snap_install_dir"/omarchy-windows-snap-*.so ]] || die "snap module state contains an unexpected path"
+  printf '%s\n' "$path"
+}
+
 hyprbars_is_enabled() {
   hyprpm list 2>/dev/null \
     | sed $'s/\033\[[0-9;]*m//g' \
@@ -43,7 +76,12 @@ hyprbars_is_enabled() {
 }
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  require_commands hyprctl hyprpm sudo install sed grep
+  require_commands hyprctl hyprpm sudo install sed grep stat
+  previous_snap_plugin=""
+  if [[ -e "$state_home" || -L "$state_home" ]]; then
+    prepare_private_dir "$state_home" "installer state directory"
+    previous_snap_plugin="$(read_snap_plugin_path)"
+  fi
   if [[ -f "$hyprland_file" ]]; then
     sed -i '\|^require("hypr\.floating-mode")$|d' "$hyprland_file"
   fi
@@ -57,19 +95,38 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   fi
   hyprctl reload
   hyprctl configerrors
-  rm -f "$backup_plugin" "$enabled_state"
+  if [[ -n "$previous_snap_plugin" ]]; then
+    prepare_private_dir "$snap_install_dir" "snap module directory"
+  fi
+  if [[ -n "$previous_snap_plugin" && -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then
+    rm -f -- "$previous_snap_plugin"
+  fi
+  rmdir "$snap_install_dir" 2>/dev/null || true
+  rm -f "$backup_plugin" "$enabled_state" "$snap_path_state"
   rmdir "$state_home" 2>/dev/null || true
-  echo "Removed Floating Mode's titlebar integration and restored the original hyprbars module."
+  echo "Removed Floating Mode's snapping and titlebar integrations, then restored the original hyprbars module."
   exit 0
 fi
 
-require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo install sed grep mktemp awk
+require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo install sed grep mktemp awk jq sha256sum cut stat
 
 [[ -f "$plugin_dir/contrib/hyprbars.lua" ]] || {
   echo "Run this from an installed $plugin_id plugin." >&2
   exit 1
 }
+[[ -f "$snap_source/main.cpp" && -f "$snap_source/geometry.hpp" && -f "$snap_source/Makefile" ]] || {
+  echo "Missing bundled Aero Snap source." >&2
+  exit 1
+}
 [[ -f "$hyprland_file" ]] || { echo "Missing $hyprland_file" >&2; exit 1; }
+
+plugin_version="$(jq -er '.version | select(type == "string" and test("^[0-9A-Za-z.+-]+$"))' "$plugin_dir/manifest.json")" || {
+  echo "manifest.json has an invalid plugin version." >&2
+  exit 1
+}
+snap_source_hash="$(sha256sum "$snap_source/main.cpp" "$snap_source/geometry.hpp" "$snap_source/Makefile" | sha256sum | cut -c1-16)"
+snap_filename="omarchy-windows-snap-$plugin_version-$snap_source_hash.so"
+snap_plugin="$snap_install_dir/$snap_filename"
 
 hyprpm update
 if ! hyprpm list 2>/dev/null | grep -q 'Plugin hyprbars'; then
@@ -88,8 +145,10 @@ git -C "$build_dir/hyprland-plugins" checkout --detach 7644cecdb947060682891a0db
 }
 git -C "$build_dir/hyprland-plugins" apply "$plugin_dir/patches/hyprbars-button-hover.patch"
 make -C "$build_dir/hyprland-plugins/hyprbars"
+make -C "$snap_source" BUILD_DIR="$build_dir/aero-snap" test all
 
-mkdir -p -m 700 "$state_home"
+prepare_private_dir "$state_home" "installer state directory"
+previous_snap_plugin="$(read_snap_plugin_path)"
 if [[ ! -f "$backup_plugin" ]]; then
   install -m755 "$cache_plugin" "$backup_plugin"
   if hyprbars_is_enabled; then printf 'true\n'; else printf 'false\n'; fi >"$enabled_state"
@@ -99,11 +158,25 @@ hyprpm disable hyprbars >/dev/null 2>&1 || true
 sudo install -m755 "$build_dir/hyprland-plugins/hyprbars/hyprbars.so" "$cache_plugin"
 hyprpm enable hyprbars
 
-install -Dm644 "$plugin_dir/contrib/hyprbars.lua" "$module_file"
+prepare_private_dir "$snap_install_dir" "snap module directory"
+install -m755 "$build_dir/aero-snap/omarchy-windows-snap.so" "$snap_plugin"
+sed "s/@SNAP_PLUGIN_FILENAME@/$snap_filename/g" "$plugin_dir/contrib/hyprbars.lua" >"$build_dir/floating-mode.lua"
+install -Dm644 "$build_dir/floating-mode.lua" "$module_file"
 grep -Fxq "$require_line" "$hyprland_file" || printf '\n%s\n' "$require_line" >>"$hyprland_file"
 
 hyprctl reload
 errors="$(hyprctl configerrors)"
 printf '%s\n' "$errors"
 [[ -z "$errors" ]] || exit 1
-echo "Installed native, compositor-attached Floating Mode titlebars."
+
+if [[ -n "$previous_snap_plugin" && "$previous_snap_plugin" != "$snap_plugin" && "$previous_snap_plugin" == "$snap_install_dir"/omarchy-windows-snap-*.so &&
+  -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then
+  rm -f -- "$previous_snap_plugin"
+fi
+snap_state_temp="$(mktemp -p "$state_home" '.snap-plugin-path.XXXXXX')" || die "cannot create snap module state"
+printf '%s\n' "$snap_plugin" >"$snap_state_temp"
+chmod 600 -- "$snap_state_temp"
+mv -f -- "$snap_state_temp" "$snap_path_state"
+snap_state_temp=""
+
+echo "Installed native Floating Mode titlebars, magnetic snapping, and Aero-style snap zones."

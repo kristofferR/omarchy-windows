@@ -2,6 +2,17 @@
 
 All notable changes to Floating Mode are documented here.
 
+## 1.1.0 — 2026-08-27
+
+- Added native magnetic snapping between floating windows and monitor edges
+- Added Aero-style drag zones for left/right halves, four quarters, and top-edge maximization
+- Added a compositor-rendered snap preview that appears only during an active drag
+- Reused Hyprland's logical work areas, reserved regions, configured gaps, decoration extents, and window size constraints
+- Restored each window's pre-snap size when it is dragged away from a snapped position
+- Added the `hl.plugin.omarchy_windows_snap.snap(...)` dispatcher factory for optional keyboard bindings
+- Kept Aero zones dormant outside Floating Mode without polling
+- Added standalone ultrawide geometry tests and content-addressed native-module updates
+
 ## 1.0.12 — 2026-08-22
 
 - Changed the displayed plugin author from `rawritude` to `Norbert Winter`
