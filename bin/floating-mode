@@ -3,6 +3,7 @@ set -euo pipefail
 
 current_uid="$(id -u)"
 runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$current_uid}"
+[[ "$runtime_dir" == /* ]] || runtime_dir="/run/user/$current_uid"
 state_dir="$runtime_dir/omarchy-floating-mode"
 enabled_file="$state_dir/enabled"
 managed_file="$state_dir/managed"

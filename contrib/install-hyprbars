@@ -103,6 +103,7 @@ new_config_errors() {
 
 if [[ "${1:-}" == "--uninstall" ]]; then
   require_commands hyprctl hyprpm sudo install sed grep stat realpath
+  snap_install_dir="$(realpath -m -- "$snap_install_dir")" || die "cannot normalize the snap module directory"
   previous_snap_plugin=""
   if [[ -e "$state_home" || -L "$state_home" ]]; then
     prepare_private_dir "$state_home" "installer state directory"
@@ -135,6 +136,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 fi
 
 require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo install sed grep mktemp awk jq sha256sum cut stat realpath
+snap_install_dir="$(realpath -m -- "$snap_install_dir")" || die "cannot normalize the snap module directory"
 
 [[ -f "$plugin_dir/contrib/hyprbars.lua" ]] || {
   echo "Run this from an installed $plugin_id plugin." >&2
@@ -156,7 +158,9 @@ if ! hyprpm list 2>/dev/null | grep -q 'Plugin hyprbars'; then
 fi
 
 # Fetch, detach, and verify the literal reviewed commit before executing source.
-build_dir="$(mktemp -d)"
+build_root="$(realpath -m -- "${TMPDIR:-/tmp}")" || die "cannot normalize the temporary build directory"
+[[ ! "$build_root" =~ [[:space:]] ]] || build_root=/tmp
+build_dir="$(mktemp -d -p "$build_root" 'omarchy-windows.XXXXXX')"
 git -C "$build_dir" init --quiet hyprland-plugins
 git -C "$build_dir/hyprland-plugins" remote add origin https://github.com/hyprwm/hyprland-plugins
 git -C "$build_dir/hyprland-plugins" fetch --depth 1 origin 7644cecdb947060682891a0db2a0cdc5c0b9e704

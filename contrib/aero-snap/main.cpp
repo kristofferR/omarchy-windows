@@ -669,8 +669,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     state                        = makeUnique<SPluginState>();
     const auto* runtimeDirectory = std::getenv("XDG_RUNTIME_DIR");
-    state->enabledMarker         = runtimeDirectory && *runtimeDirectory ? std::string{runtimeDirectory} + "/omarchy-floating-mode/enabled" :
-                                                                           "/run/user/" + std::to_string(getuid()) + "/omarchy-floating-mode/enabled";
+    state->enabledMarker         = runtimeDirectory && runtimeDirectory[0] == '/' ? std::string{runtimeDirectory} + "/omarchy-floating-mode/enabled" :
+                                                                                    "/run/user/" + std::to_string(getuid()) + "/omarchy-floating-mode/enabled";
 
     state->config.enabled = makeShared<Config::Values::CBoolValue>("plugin:omarchy_windows_snap:enabled", "Enable Aero-style drag snap zones", true);
     state->config.floatingModeOnly =
