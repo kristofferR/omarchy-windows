@@ -438,7 +438,7 @@ namespace {
 
         const auto& controller = g_layoutManager->dragController();
         const auto  target     = controller->target();
-        if (target && controller->mode() != MBIND_MOVE && Desktop::View::validMapped(target->window()))
+        if (target && controller->mode() != MBIND_MOVE && controller->dragThresholdReached() && Desktop::View::validMapped(target->window()))
             forgetRestoreBox(target->window());
         if (!target || controller->mode() != MBIND_MOVE || controller->draggingTiled() || !target->floating() || !Desktop::View::validMapped(target->window())) {
             resetDrag();
@@ -557,7 +557,10 @@ namespace {
                     .error   = "expected left, center, right, top-left, top-right, "
                                "bottom-left, bottom-right, maximize, or restore"};
 
-        currentSnapRecord(window->m_target, false);
+        const bool hasSnapRecord = currentSnapRecord(window->m_target, false) != nullptr;
+        if (*zone == Zone::Maximize && Fullscreen::controller()->isFullscreen(window, Fullscreen::FSMODE_MAXIMIZED) && !hasSnapRecord)
+            return {};
+
         std::optional<Fullscreen::SFullscreenMode> previousFullscreenModes;
         if (*zone != Zone::Maximize && Fullscreen::controller()->isFullscreen(window)) {
             previousFullscreenModes = Fullscreen::controller()->getFullscreenModes(window);
