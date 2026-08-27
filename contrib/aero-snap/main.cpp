@@ -459,10 +459,19 @@ namespace {
                                "bottom-left, bottom-right, maximize, or restore"};
 
         currentSnapRecord(window->m_target, false);
+        std::optional<Fullscreen::SFullscreenMode> previousFullscreenModes;
+        if (*zone != Zone::Maximize && Fullscreen::controller()->isFullscreen(window)) {
+            previousFullscreenModes = Fullscreen::controller()->getFullscreenModes(window);
+            Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE);
+        }
+
         const auto monitor   = window->m_monitor.lock();
         const auto placement = placementFor(window->m_target, monitor, *zone);
-        if (!placement)
+        if (!placement) {
+            if (previousFullscreenModes)
+                Fullscreen::controller()->setFullscreenMode(window, previousFullscreenModes->internal, previousFullscreenModes->client);
             return {.success = false, .error = "snap zone cannot satisfy this window's size constraints"};
+        }
 
         applyPlacement(*placement, window->m_target->position());
         return {};

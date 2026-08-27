@@ -171,6 +171,29 @@ if grep -Fxq "$require_line" "$hyprland_file"; then
   require_was_present=true
 fi
 
+rollback_snap_module() {
+  if [[ "$module_was_present" == true ]]; then
+    install -m644 "$module_backup" "$module_file"
+  else
+    rm -f -- "$module_file"
+  fi
+  if [[ "$require_was_present" != true ]]; then
+    sed -i '\|^require("hypr\.floating-mode")$|d' "$hyprland_file"
+  fi
+  hyprctl reload >/dev/null 2>&1 || true
+  if [[ "$snap_plugin_installed" == true && -f "$snap_plugin" && ! -L "$snap_plugin" ]]; then
+    rm -f -- "$snap_plugin"
+  fi
+}
+
+publish_snap_state() {
+  snap_state_temp="$(mktemp -p "$state_home" '.snap-plugin-path.XXXXXX')" || return 1
+  printf '%s\n' "$snap_plugin" >"$snap_state_temp" || return 1
+  chmod 600 -- "$snap_state_temp" || return 1
+  mv -f -- "$snap_state_temp" "$snap_path_state" || return 1
+  snap_state_temp=""
+}
+
 if [[ -e "$snap_plugin" || -L "$snap_plugin" ]]; then
   [[ -f "$snap_plugin" && ! -L "$snap_plugin" ]] || die "unsafe existing snap module: $snap_plugin"
   [[ "$(sha256sum "$snap_plugin" | cut -d' ' -f1)" == "$snap_binary_sha256" ]] || die "snap module hash collision: $snap_plugin"
@@ -189,29 +212,18 @@ if ! errors="$(hyprctl configerrors)"; then
 fi
 printf '%s\n' "$errors"
 if [[ "$reload_ok" != true || -n "$errors" ]]; then
-  if [[ "$module_was_present" == true ]]; then
-    install -m644 "$module_backup" "$module_file"
-  else
-    rm -f -- "$module_file"
-  fi
-  if [[ "$require_was_present" != true ]]; then
-    sed -i '\|^require("hypr\.floating-mode")$|d' "$hyprland_file"
-  fi
-  hyprctl reload >/dev/null 2>&1 || true
-  if [[ "$snap_plugin_installed" == true && -f "$snap_plugin" && ! -L "$snap_plugin" ]]; then
-    rm -f -- "$snap_plugin"
-  fi
+  rollback_snap_module
   die "Hyprland rejected the new configuration; restored the previous module"
+fi
+
+if ! publish_snap_state; then
+  rollback_snap_module
+  die "cannot record the installed snap module; restored the previous module"
 fi
 
 if [[ -n "$previous_snap_plugin" && "$previous_snap_plugin" != "$snap_plugin" && "$previous_snap_plugin" == "$snap_install_dir"/omarchy-windows-snap-*.so &&
   -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then
   rm -f -- "$previous_snap_plugin"
 fi
-snap_state_temp="$(mktemp -p "$state_home" '.snap-plugin-path.XXXXXX')" || die "cannot create snap module state"
-printf '%s\n' "$snap_plugin" >"$snap_state_temp"
-chmod 600 -- "$snap_state_temp"
-mv -f -- "$snap_state_temp" "$snap_path_state"
-snap_state_temp=""
 
 echo "Installed native Floating Mode titlebars, magnetic snapping, and Aero-style snap zones."
