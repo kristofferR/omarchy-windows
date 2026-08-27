@@ -167,6 +167,8 @@ make -C "$snap_source" BUILD_DIR="$build_dir/aero-snap" test all
 snap_binary_sha256="$(sha256sum "$build_dir/aero-snap/omarchy-windows-snap.so" | cut -d' ' -f1)"
 snap_filename="omarchy-windows-snap-$plugin_version-${snap_binary_sha256:0:16}.so"
 snap_plugin="$snap_install_dir/$snap_filename"
+[[ ! "$snap_plugin" =~ [[:cntrl:]] && "$snap_plugin" != *']====]'* ]] || die "snap module path cannot be embedded safely"
+snap_plugin_replacement="$(printf '%s' "$snap_plugin" | sed 's/[\\&|]/\\&/g')"
 
 prepare_private_dir "$state_home" "installer state directory"
 previous_snap_plugin="$(read_snap_plugin_path)"
@@ -230,7 +232,7 @@ else
     die "cannot install the snap module; restored the previous module"
   fi
 fi
-if ! sed "s/@SNAP_PLUGIN_FILENAME@/$snap_filename/g" "$plugin_dir/contrib/hyprbars.lua" >"$build_dir/floating-mode.lua"; then
+if ! sed "s|@SNAP_PLUGIN_PATH@|$snap_plugin_replacement|g" "$plugin_dir/contrib/hyprbars.lua" >"$build_dir/floating-mode.lua"; then
   rollback_snap_module
   die "cannot render the Hyprland module; restored the previous module"
 fi
