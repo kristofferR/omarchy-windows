@@ -235,6 +235,29 @@ namespace {
         std::erase_if(state->records, [&](const auto& record) { return record.window.lock() == window; });
     }
 
+    void restoreTrackedWindows() {
+        auto records = std::move(state->records);
+        state->records.clear();
+
+        for (const auto& record : records) {
+            const auto window = record.window.lock();
+            if (!Desktop::View::validMapped(window) || !window->m_target || !window->m_target->floating())
+                continue;
+
+            const auto target = window->m_target;
+            if (record.zone == Zone::Maximize) {
+                if (!Fullscreen::controller()->isFullscreen(window, Fullscreen::FSMODE_MAXIMIZED))
+                    continue;
+                Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE);
+            } else if (!sameBox(target->position(), record.snappedBox))
+                continue;
+
+            g_layoutManager->setTargetGeom(record.restoreBox, target);
+            target->warpPositionSize();
+            target->damageEntire();
+        }
+    }
+
     SSnapRecord* currentSnapRecord(const SP<Layout::ITarget>& target, const bool allowMoved) {
         if (!target || !Desktop::View::validMapped(target->window()))
             return nullptr;
@@ -712,6 +735,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
 
     clearPreview();
     state->pendingApply.reset();
+    restoreTrackedWindows();
     state->mouseMoveListener.reset();
     state->mouseButtonListener.reset();
     state->renderListener.reset();

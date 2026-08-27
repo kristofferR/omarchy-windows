@@ -117,11 +117,11 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   fi
   hyprctl reload
   hyprctl configerrors
-  if [[ -n "$previous_snap_plugin" ]]; then
-    prepare_private_dir "$snap_install_dir" "snap module directory"
-  fi
   if [[ -n "$previous_snap_plugin" && -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then
     rm -f -- "$previous_snap_plugin"
+  fi
+  if [[ -n "$previous_snap_plugin" ]]; then
+    rmdir "${previous_snap_plugin%/*}" 2>/dev/null || true
   fi
   rmdir "$snap_install_dir" 2>/dev/null || true
   rm -f "$backup_plugin" "$enabled_state" "$snap_path_state"
@@ -224,12 +224,24 @@ if [[ -e "$snap_plugin" || -L "$snap_plugin" ]]; then
   [[ -f "$snap_plugin" && ! -L "$snap_plugin" ]] || die "unsafe existing snap module: $snap_plugin"
   [[ "$(sha256sum "$snap_plugin" | cut -d' ' -f1)" == "$snap_binary_sha256" ]] || die "snap module hash collision: $snap_plugin"
 else
-  install -m755 "$build_dir/aero-snap/omarchy-windows-snap.so" "$snap_plugin"
   snap_plugin_installed=true
+  if ! install -m755 "$build_dir/aero-snap/omarchy-windows-snap.so" "$snap_plugin"; then
+    rollback_snap_module
+    die "cannot install the snap module; restored the previous module"
+  fi
 fi
-sed "s/@SNAP_PLUGIN_FILENAME@/$snap_filename/g" "$plugin_dir/contrib/hyprbars.lua" >"$build_dir/floating-mode.lua"
-install -Dm644 "$build_dir/floating-mode.lua" "$module_file"
-grep -Fxq "$require_line" "$hyprland_file" || printf '\n%s\n' "$require_line" >>"$hyprland_file"
+if ! sed "s/@SNAP_PLUGIN_FILENAME@/$snap_filename/g" "$plugin_dir/contrib/hyprbars.lua" >"$build_dir/floating-mode.lua"; then
+  rollback_snap_module
+  die "cannot render the Hyprland module; restored the previous module"
+fi
+if ! install -Dm644 "$build_dir/floating-mode.lua" "$module_file"; then
+  rollback_snap_module
+  die "cannot install the Hyprland module; restored the previous module"
+fi
+if ! grep -Fxq "$require_line" "$hyprland_file" && ! printf '\n%s\n' "$require_line" >>"$hyprland_file"; then
+  rollback_snap_module
+  die "cannot load the Hyprland module; restored the previous module"
+fi
 
 reload_ok=true
 hyprctl reload || reload_ok=false
@@ -248,9 +260,11 @@ if ! publish_snap_state; then
   die "cannot record the installed snap module; restored the previous module"
 fi
 
-if [[ -n "$previous_snap_plugin" && "$previous_snap_plugin" != "$snap_plugin" && "$previous_snap_plugin" == "$snap_install_dir"/omarchy-windows-snap-*.so &&
-  -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then
+if [[ -n "$previous_snap_plugin" && "$previous_snap_plugin" != "$snap_plugin" && -f "$previous_snap_plugin" && ! -L "$previous_snap_plugin" ]]; then
   rm -f -- "$previous_snap_plugin"
+  if [[ "${previous_snap_plugin%/*}" != "$snap_install_dir" ]]; then
+    rmdir "${previous_snap_plugin%/*}" 2>/dev/null || true
+  fi
 fi
 
 echo "Installed native Floating Mode titlebars, magnetic snapping, and Aero-style snap zones."
