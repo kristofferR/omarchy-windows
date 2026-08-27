@@ -660,8 +660,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                         Config::Values::SIntValueOptions{.min = 1, .max = 128});
     state->config.cornerRatio   = makeShared<Config::Values::CFloatValue>("plugin:omarchy_windows_snap:corner_ratio", "Fraction of each monitor edge reserved for corner zones",
                                                                           0.25F, Config::Values::SFloatValueOptions{.min = 0.05F, .max = 0.45F});
-    state->config.previewColor  = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_color", "Snap preview fill color", 0x331e40af);
-    state->config.previewBorderColor       = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_border_color", "Snap preview border color", 0xbd2563eb);
+    state->config.previewColor  = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_color", "Snap preview fill color", 0x331e3a8a);
+    state->config.previewBorderColor       = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_border_color", "Snap preview border color", 0xbd1d4ed8);
     state->config.previewBorderSize        = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_border_size", "Snap preview border size", 2,
                                                                                    Config::Values::SIntValueOptions{.min = 0, .max = 16});
     state->config.previewRounding          = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_rounding", "Snap preview corner radius", 8,
