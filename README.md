@@ -84,7 +84,7 @@ In Floating Mode, use either the native titlebar or `Super`+drag to move a windo
 - Move away from an edge before releasing to cancel the snap
 - Drag a snapped window away to recover its pre-snap size
 
-The deeper-blue preview is drawn by Hyprland while a valid snap zone is active, then briefly fades out when the zone becomes invalid or the drag ends. It uses native blur and a 200 ms OutQuart morph between zones, then stops repainting once settled. Set `preview_blur = false` or `preview_animation_duration = 0` in the plugin configuration to disable either effect. The square titlebar button toggles maximization; the close button closes the window and shows a red circular background on hover.
+Hyprland draws a blurred blue preview with a 200 ms transition between zones. The square titlebar button toggles maximization; the close button closes the window.
 
 Full-height snapping uses `columns = "auto"` by default: monitors wider than 16:9 get three columns, while 16:9 and narrower monitors keep two. Corner zones remain quarters in either layout. To force one layout on every monitor, add this after `require("hypr.floating-mode")` in `~/.config/hypr/hyprland.lua`:
 
@@ -93,20 +93,6 @@ hl.config({ plugin = { omarchy_windows_snap = { columns = "2" } } }) -- or "3"
 ```
 
 Hyprland's native magnetic snap is also enabled, so manually placed floating windows align to nearby windows and monitor edges without being resized.
-
-### Optional keyboard bindings
-
-The native plugin exposes the same geometry engine to Lua. Because the plugin is loaded by `require("hypr.floating-mode")`, add any bindings you want below that line near the end of `~/.config/hypr/hyprland.lua`:
-
-```lua
-hl.bind("SUPER + ALT + LEFT", hl.plugin.omarchy_windows_snap.snap("left"))
-hl.bind("SUPER + ALT + C", hl.plugin.omarchy_windows_snap.snap("center"))
-hl.bind("SUPER + ALT + RIGHT", hl.plugin.omarchy_windows_snap.snap("right"))
-hl.bind("SUPER + ALT + UP", hl.plugin.omarchy_windows_snap.snap("maximize"))
-hl.bind("SUPER + ALT + DOWN", hl.plugin.omarchy_windows_snap.snap("restore"))
-```
-
-Available actions are `left`, `center`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`, `maximize`, and `restore`. `center` requires the active monitor to use three columns. The actions intentionally have no default bindings, avoiding conflicts with Omarchy's existing workspace and window controls.
 
 Runtime state is kept in `$XDG_RUNTIME_DIR/omarchy-floating-mode` and disappears at logout. No window content is read or stored.
 The runtime directory must be private and owned by the current user; unsafe directories, symlinks, and state files are rejected before use.
@@ -131,8 +117,6 @@ Because Hyprland plugins are ABI-sensitive, rerun the installer after a Hyprland
 
 First click the bar button to return to tiled mode. Then run:
 
-If you added the optional snap bindings above, remove those `hl.bind(... omarchy_windows_snap ...)` lines from `~/.config/hypr/hyprland.lua` before uninstalling. The snap plugin namespace is unavailable after removal.
-
 ```bash
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars --uninstall
 omarchy plugin remove io.github.rawritude.floating-mode --yes
@@ -154,7 +138,7 @@ Only window addresses changed by Floating Mode are recorded. When the mode is di
 
 Titlebars are rendered inside the compositor by the official [`hyprbars`](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars) plugin. The bundled [`hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch) adds configurable circular hover backgrounds while keeping the button symbols permanently visible.
 
-The bundled `omarchy-windows-snap` plugin listens to Hyprland's drag events rather than polling. It detects zones against each monitor's logical coordinates, uses Hyprland's current work area and gaps, accounts for titlebar and input extents, and applies geometry only when the drag ends. Its preview is a compositor render-pass rectangle, so there is no continuously animating overlay process. The Floating Mode runtime marker is checked only during drag input.
+The bundled `omarchy-windows-snap` plugin handles drag zones and previews inside Hyprland without a background polling process.
 
 ## Privacy and security
 
