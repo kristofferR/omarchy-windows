@@ -2,26 +2,6 @@
 
 All notable changes to Floating Mode are documented here.
 
-## 1.1.0 — 2026-08-27
-
-- Added native magnetic snapping between floating windows and monitor edges
-- Added configurable two- or three-column full-height snapping, defaulting to three columns on monitors wider than 16:9
-- Added a three-way bottom-edge selector and `center` dispatcher action for full-height columns
-- Preserved four quarter zones and top-edge maximization in either column layout
-- Added a deeper-blue, subtly blurred compositor preview that morphs smoothly between snap zones
-- Reused Hyprland's logical work areas, reserved regions, configured gaps, decoration extents, and window size constraints
-- Restored each window's pre-snap size when it is dragged away from a snapped position
-- Added the `hl.plugin.omarchy_windows_snap.snap(...)` dispatcher factory for optional keyboard bindings
-- Kept Aero zones dormant outside Floating Mode without polling
-- Discarded stale pre-snap geometry after manual resizing, repositioning, or leaving Floating Mode
-- Restored drag-away geometry correctly from maximized snaps and released event listeners during plugin unload
-- Checked the Floating Mode marker once per drag and preserved top-edge maximize across the full corner-ratio range
-- Rolled back the installed snap module and Lua configuration when Hyprland rejects an update or installer state cannot be committed
-- Derived module filenames from the compiled binary so an active shared object is never overwritten in place
-- Matched the installer's data-directory fallback when `XDG_DATA_HOME` is empty
-- Documented removing optional snap bindings before uninstalling the native module
-- Added standalone ultrawide geometry tests and content-addressed native-module updates
-
 ## 1.0.12 — 2026-08-22
 
 - Changed the displayed plugin author from `rawritude` to `Norbert Winter`

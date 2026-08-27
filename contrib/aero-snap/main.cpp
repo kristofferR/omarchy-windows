@@ -10,7 +10,6 @@
 #include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
-#include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
@@ -31,13 +30,7 @@
 #include <cstdlib>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <vector>
-
-extern "C" {
-#include <lua.h>
-#include <lauxlib.h>
-}
 
 namespace {
 
@@ -504,104 +497,6 @@ namespace {
         });
     }
 
-    std::optional<Zone> parseZone(std::string_view value) {
-        while (!value.empty() && value.front() == ' ')
-            value.remove_prefix(1);
-        while (!value.empty() && value.back() == ' ')
-            value.remove_suffix(1);
-
-        if (value == "left")
-            return Zone::Left;
-        if (value == "center")
-            return Zone::Center;
-        if (value == "right")
-            return Zone::Right;
-        if (value == "top-left")
-            return Zone::TopLeft;
-        if (value == "top-right")
-            return Zone::TopRight;
-        if (value == "bottom-left")
-            return Zone::BottomLeft;
-        if (value == "bottom-right")
-            return Zone::BottomRight;
-        if (value == "maximize" || value == "top")
-            return Zone::Maximize;
-        return std::nullopt;
-    }
-
-    SDispatchResult snapDispatcher(const std::string argument) {
-        if (!floatingModeActive())
-            return {.success = false, .error = "omarchy-snap is available only while Floating Mode is active"};
-
-        const auto window = Desktop::focusState()->window();
-        if (!Desktop::View::validMapped(window) || !window->m_target || !window->m_target->floating())
-            return {.success = false, .error = "omarchy-snap requires a focused floating window"};
-
-        if (argument == "restore") {
-            const auto record = currentSnapRecord(window->m_target, false);
-            if (!record)
-                return {.success = false, .error = "focused window has no saved pre-snap geometry"};
-
-            const auto restoreBox = record->restoreBox;
-            forgetRestoreBox(window);
-            if (Fullscreen::controller()->isFullscreen(window))
-                Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE);
-            g_layoutManager->setTargetGeom(restoreBox, window->m_target);
-            window->m_target->warpPositionSize();
-            return {};
-        }
-
-        const auto zone = parseZone(argument);
-        if (!zone)
-            return {.success = false,
-                    .error   = "expected left, center, right, top-left, top-right, "
-                               "bottom-left, bottom-right, maximize, or restore"};
-
-        const bool hasSnapRecord = currentSnapRecord(window->m_target, false) != nullptr;
-        if (*zone == Zone::Maximize && Fullscreen::controller()->isFullscreen(window, Fullscreen::FSMODE_MAXIMIZED) && !hasSnapRecord)
-            return {};
-
-        std::optional<Fullscreen::SFullscreenMode> previousFullscreenModes;
-        if (*zone != Zone::Maximize && Fullscreen::controller()->isFullscreen(window)) {
-            previousFullscreenModes = Fullscreen::controller()->getFullscreenModes(window);
-            Fullscreen::controller()->setFullscreenMode(window, Fullscreen::FSMODE_NONE);
-        }
-
-        const auto monitor   = window->m_monitor.lock();
-        const auto placement = placementFor(window->m_target, monitor, *zone);
-        if (!placement) {
-            if (previousFullscreenModes)
-                Fullscreen::controller()->setFullscreenMode(window, previousFullscreenModes->internal, previousFullscreenModes->client);
-            return {.success = false, .error = "snap zone cannot satisfy this window's size constraints"};
-        }
-
-        applyPlacement(*placement, window->m_target->position());
-        return {};
-    }
-
-    int runLuaSnapDispatcher(lua_State* luaState) {
-        const auto* argument = lua_tostring(luaState, lua_upvalueindex(1));
-        const auto  result   = snapDispatcher(argument ? argument : "");
-
-        lua_createtable(luaState, 0, result.success ? 1 : 2);
-        lua_pushboolean(luaState, result.success);
-        lua_setfield(luaState, -2, "ok");
-        if (!result.success) {
-            lua_pushlstring(luaState, result.error.data(), result.error.size());
-            lua_setfield(luaState, -2, "error");
-        }
-        return 1;
-    }
-
-    int createLuaSnapDispatcher(lua_State* luaState) {
-        if (!lua_isstring(luaState, 1))
-            return luaL_error(luaState, "hl.plugin.omarchy_windows_snap.snap: expected a zone string");
-
-        lua_pushvalue(luaState, 1);
-        lua_pushcclosure(luaState, runLuaSnapDispatcher, 1);
-        return 1;
-    }
-
     void onRenderStage(const eRenderStage stageValue) {
         if (!state || stageValue != RENDER_POST_WINDOWS || !state->preview)
             return;
@@ -723,11 +618,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             forgetRestoreBox(window);
     });
 
-    if (!HyprlandAPI::addDispatcherV2(pluginHandle, "omarchy-snap", snapDispatcher))
-        throw std::runtime_error("failed to register the omarchy-snap dispatcher");
-    if (!HyprlandAPI::addLuaFunction(pluginHandle, "omarchy_windows_snap", "snap", createLuaSnapDispatcher))
-        throw std::runtime_error("failed to register the omarchy_windows_snap Lua dispatcher");
-
     HyprlandAPI::reloadConfig();
     return {"omarchy-windows-snap", "Aero-style drag snap zones for Omarchy Floating Mode", "Norbert Winter and contributors", "1.0"};
 }
@@ -744,7 +634,5 @@ APICALL EXPORT void PLUGIN_EXIT() {
     state->renderListener.reset();
     state->windowDestroyListener.reset();
     state->windowFloatingListener.reset();
-    HyprlandAPI::removeLuaFunction(pluginHandle, "omarchy_windows_snap", "snap");
-    HyprlandAPI::removeDispatcher(pluginHandle, "omarchy-snap");
     state.reset();
 }

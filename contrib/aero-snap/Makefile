@@ -20,18 +20,18 @@ GEOMETRY_TEST = $(BUILD_DIR)/geometry-test
 all: $(TARGET)
 
 $(TARGET): main.cpp geometry.hpp | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(PLUGIN_FLAGS) $(LDFLAGS) $(EXTRA_FLAGS) $(INCLUDES) main.cpp -o $@
+	$(CXX) $(CXXFLAGS) $(PLUGIN_FLAGS) $(LDFLAGS) $(EXTRA_FLAGS) $(INCLUDES) main.cpp -o "$@"
 
 $(GEOMETRY_TEST): geometry.test.cpp geometry.hpp | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(TEST_FLAGS) geometry.test.cpp -o $@
+	$(CXX) $(CXXFLAGS) $(TEST_FLAGS) geometry.test.cpp -o "$@"
 
 $(BUILD_DIR):
-	mkdir -p -- $@
+	mkdir -p -- "$@"
 
 test: $(GEOMETRY_TEST)
-	$(GEOMETRY_TEST)
+	"$(GEOMETRY_TEST)"
 
 clean:
-	rm -f -- $(TARGET) $(GEOMETRY_TEST)
+	rm -f -- "$(TARGET)" "$(GEOMETRY_TEST)"
 
 .PHONY: all clean test
