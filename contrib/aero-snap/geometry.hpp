@@ -39,6 +39,38 @@ namespace AeroSnap {
         return monitor.w > 0 && monitor.h > 0 && monitor.w * 9.0 > monitor.h * 16.0 ? 3 : 2;
     }
 
+    inline double outQuart(const double progress) {
+        const double remaining = 1.0 - std::clamp(progress, 0.0, 1.0);
+        return 1.0 - remaining * remaining * remaining * remaining;
+    }
+
+    inline double inCubic(const double progress) {
+        const double clamped = std::clamp(progress, 0.0, 1.0);
+        return clamped * clamped * clamped;
+    }
+
+    inline Rect interpolateRect(const Rect from, const Rect to, const double progress) {
+        const double clamped = std::clamp(progress, 0.0, 1.0);
+        return {
+            from.x + (to.x - from.x) * clamped,
+            from.y + (to.y - from.y) * clamped,
+            from.w + (to.w - from.w) * clamped,
+            from.h + (to.h - from.h) * clamped,
+        };
+    }
+
+    inline Rect scaleRectFromCenter(const Rect rect, const double scale) {
+        const double clamped = std::max(0.0, scale);
+        const double width   = rect.w * clamped;
+        const double height  = rect.h * clamped;
+        return {
+            rect.x + (rect.w - width) / 2.0,
+            rect.y + (rect.h - height) / 2.0,
+            width,
+            height,
+        };
+    }
+
     inline Zone zoneAt(const Point cursor, const Rect monitor, const double edgeThreshold, const double cornerRatio, const int columns) {
         if (monitor.w <= 0 || monitor.h <= 0 || edgeThreshold < 0)
             return Zone::None;
@@ -57,12 +89,17 @@ namespace AeroSnap {
             return Zone::TopLeft;
         if ((nearTop && inRightRegion) || (nearRight && inTopRegion))
             return Zone::TopRight;
+        if (nearBottom && columns == 3) {
+            if (cursor.x < monitor.x + monitor.w / 3.0)
+                return Zone::Left;
+            if (cursor.x > monitor.x + monitor.w * 2.0 / 3.0)
+                return Zone::Right;
+            return Zone::Center;
+        }
         if ((nearBottom && inLeftRegion) || (nearLeft && inBottomRegion))
             return Zone::BottomLeft;
         if ((nearBottom && inRightRegion) || (nearRight && inBottomRegion))
             return Zone::BottomRight;
-        if (nearBottom && columns == 3)
-            return Zone::Center;
         if (nearTop)
             return Zone::Maximize;
         if (nearLeft)

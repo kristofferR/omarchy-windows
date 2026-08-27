@@ -75,6 +75,19 @@ hyprbars_is_enabled() {
     | grep -qx true
 }
 
+new_config_errors() {
+  local baseline="$1" current="$2" line
+  local -A existing=()
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] || existing["$line"]=1
+  done <<<"$baseline"
+
+  while IFS= read -r line; do
+    [[ -z "$line" || -n "${existing[$line]+present}" ]] || printf '%s\n' "$line"
+  done <<<"$current"
+}
+
 if [[ "${1:-}" == "--uninstall" ]]; then
   require_commands hyprctl hyprpm sudo install sed grep stat
   previous_snap_plugin=""
@@ -153,6 +166,10 @@ if [[ ! -f "$backup_plugin" ]]; then
   if hyprbars_is_enabled; then printf 'true\n'; else printf 'false\n'; fi >"$enabled_state"
 fi
 
+if ! baseline_errors="$(hyprctl configerrors)"; then
+  die "cannot read the existing Hyprland configuration errors"
+fi
+
 hyprpm disable hyprbars >/dev/null 2>&1 || true
 sudo install -m755 "$build_dir/hyprland-plugins/hyprbars/hyprbars.so" "$cache_plugin"
 hyprpm enable hyprbars
@@ -210,8 +227,9 @@ hyprctl reload || reload_ok=false
 if ! errors="$(hyprctl configerrors)"; then
   errors="hyprctl configerrors failed"
 fi
+new_errors="$(new_config_errors "$baseline_errors" "$errors")"
 printf '%s\n' "$errors"
-if [[ "$reload_ok" != true || -n "$errors" ]]; then
+if [[ "$reload_ok" != true || -n "$new_errors" ]]; then
   rollback_snap_module
   die "Hyprland rejected the new configuration; restored the previous module"
 fi

@@ -38,11 +38,21 @@ int main() {
     expect(AeroSnap::columnsForMonitor(ultrawide, "2") == 2, "two columns can be forced on an ultrawide monitor");
     expect(AeroSnap::columnsForMonitor(widescreen, "3") == 3, "three columns can be forced on a 16:9 monitor");
 
+    expect(closeTo(AeroSnap::outQuart(0.5), 0.9375), "OutQuart reaches the target without overshoot");
+    expect(closeTo(AeroSnap::inCubic(0.5), 0.125), "InCubic holds most motion until the end");
+    expectRect(AeroSnap::interpolateRect(Rect{0, 10, 100, 80}, Rect{200, 30, 300, 120}, 0.5), Rect{100, 20, 200, 100}, "preview boxes interpolate together");
+    expectRect(AeroSnap::scaleRectFromCenter(Rect{10, 20, 200, 100}, 0.96), Rect{14, 22, 192, 96}, "preview entrance scales around its center");
+
     expect(AeroSnap::zoneAt(Point{0, 576}, ultrawide, 12, 0.25, 3) == Zone::Left, "left edge selects the outer column");
     expect(AeroSnap::zoneAt(Point{4095, 100}, ultrawide, 12, 0.25, 3) == Zone::TopRight, "side-edge corner bands are generous");
     expect(AeroSnap::zoneAt(Point{2048, 0}, ultrawide, 12, 0.25, 3) == Zone::Maximize, "top center maximizes");
     expect(AeroSnap::zoneAt(Point{2048, 0}, ultrawide, 12, 0.5, 3) == Zone::Maximize, "the maximum corner ratio preserves a maximize band");
+    expect(AeroSnap::zoneAt(Point{100, 1151}, ultrawide, 12, 0.25, 3) == Zone::Left, "bottom-left third selects the left column");
     expect(AeroSnap::zoneAt(Point{2048, 1151}, ultrawide, 12, 0.25, 3) == Zone::Center, "bottom center selects the middle column");
+    expect(AeroSnap::zoneAt(Point{3996, 1151}, ultrawide, 12, 0.25, 3) == Zone::Right, "bottom-right third selects the right column");
+    expect(AeroSnap::zoneAt(Point{0, 1000}, ultrawide, 12, 0.25, 3) == Zone::BottomLeft, "lower left side keeps the bottom-left quarter");
+    expect(AeroSnap::zoneAt(Point{4095, 1000}, ultrawide, 12, 0.25, 3) == Zone::BottomRight, "lower right side keeps the bottom-right quarter");
+    expect(AeroSnap::zoneAt(Point{100, 1151}, ultrawide, 12, 0.25, 2) == Zone::BottomLeft, "two-column mode keeps the bottom-left corner");
     expect(AeroSnap::zoneAt(Point{2048, 1151}, ultrawide, 12, 0.25, 2) == Zone::None, "two-column mode leaves bottom center untouched");
     expect(AeroSnap::zoneAt(Point{500, 500}, ultrawide, 12, 0.25, 3) == Zone::None, "interior movement is untouched");
 

@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <optional>
@@ -42,6 +43,8 @@ namespace {
 
     using AeroSnap::Zone;
 
+    using PreviewClock = std::chrono::steady_clock;
+
     HANDLE pluginHandle = nullptr;
 
     struct SConfigValues {
@@ -54,6 +57,8 @@ namespace {
         SP<Config::Values::CColorValue>  previewBorderColor;
         SP<Config::Values::CIntValue>    previewBorderSize;
         SP<Config::Values::CIntValue>    previewRounding;
+        SP<Config::Values::CBoolValue>   previewBlur;
+        SP<Config::Values::CIntValue>    previewAnimationDuration;
     };
 
     struct SPlacement {
@@ -65,8 +70,19 @@ namespace {
     };
 
     struct SPreview {
-        PHLMONITORREF monitor;
-        CBox          box;
+        PHLMONITORREF             monitor;
+        CBox                      fromBox;
+        CBox                      targetBox;
+        PreviewClock::time_point  startedAt;
+        std::chrono::milliseconds duration{0};
+        float                     fromOpacity   = 0.F;
+        float                     targetOpacity = 1.F;
+    };
+
+    struct SPreviewFrame {
+        CBox  box;
+        float opacity = 0.F;
+        bool  settled = true;
     };
 
     struct SSnapRecord {
@@ -114,24 +130,84 @@ namespace {
     }
 
     void damagePreviewBox(const CBox& box) {
-        constexpr double padding = 4;
+        constexpr double padding = 12;
         g_pHyprRenderer->damageBox({box.x - padding, box.y - padding, box.w + padding * 2, box.h + padding * 2});
+    }
+
+    SPreviewFrame previewFrame(const SPreview& preview, const PreviewClock::time_point now) {
+        const double elapsed  = std::chrono::duration<double, std::milli>(now - preview.startedAt).count();
+        const double duration = static_cast<double>(preview.duration.count());
+        const double progress = duration <= 0.0 ? 1.0 : std::clamp(elapsed / duration, 0.0, 1.0);
+        const double eased    = preview.targetOpacity < preview.fromOpacity ? AeroSnap::inCubic(progress) : AeroSnap::outQuart(progress);
+
+        return {
+            toBox(AeroSnap::interpolateRect(toRect(preview.fromBox), toRect(preview.targetBox), eased)),
+            static_cast<float>(preview.fromOpacity + (preview.targetOpacity - preview.fromOpacity) * eased),
+            progress >= 1.0,
+        };
+    }
+
+    std::chrono::milliseconds previewDuration(const CBox& fromBox, const CBox& targetBox, const PHLMONITOR& monitor, const double opacityDistance = 0.0) {
+        const int configured = std::max(0, static_cast<int>(state->config.previewAnimationDuration->value()));
+        if (configured == 0 || !monitor)
+            return std::chrono::milliseconds{0};
+
+        const CBox   monitorBox  = monitor->logicalBox();
+        const double reference   = std::max(1.0, monitorBox.w / 3.0);
+        const double boxDistance = std::max({
+            std::abs(targetBox.x - fromBox.x),
+            std::abs(targetBox.y - fromBox.y),
+            std::abs(targetBox.w - fromBox.w),
+            std::abs(targetBox.h - fromBox.h),
+        });
+        const double distance    = std::clamp(std::max(boxDistance / reference, opacityDistance), 0.1, 1.0);
+        return std::chrono::milliseconds{std::max(1, static_cast<int>(std::round(configured * distance)))};
     }
 
     void clearPreview() {
         if (!state || !state->preview)
             return;
 
-        damagePreviewBox(state->preview->box);
-        state->preview.reset();
+        if (state->preview->targetOpacity <= 0.F)
+            return;
+
+        const auto now        = PreviewClock::now();
+        const auto current    = previewFrame(*state->preview, now);
+        const CBox target     = toBox(AeroSnap::scaleRectFromCenter(toRect(current.box), 0.985));
+        const auto monitor    = state->preview->monitor.lock();
+        const int  configured = std::max(0, static_cast<int>(state->config.previewAnimationDuration->value()));
+        const auto duration =
+            configured == 0 ? std::chrono::milliseconds{0} : std::chrono::milliseconds{std::max(1, static_cast<int>(std::round(configured * 0.625 * current.opacity)))};
+
+        damagePreviewBox(current.box);
+        damagePreviewBox(target);
+        state->preview = SPreview{monitor, current.box, target, now, duration, current.opacity, 0.F};
     }
 
     void setPreview(const PHLMONITOR& monitor, const CBox& box) {
-        if (state->preview && state->preview->monitor.lock() == monitor && sameBox(state->preview->box, box))
+        if (state->preview && state->preview->monitor.lock() == monitor && sameBox(state->preview->targetBox, box) && state->preview->targetOpacity >= 1.F)
             return;
 
-        clearPreview();
-        state->preview = SPreview{monitor, box};
+        const auto now = PreviewClock::now();
+        if (state->preview && state->preview->monitor.lock() == monitor) {
+            const auto current  = previewFrame(*state->preview, now);
+            const auto duration = previewDuration(current.box, box, monitor, 1.0 - current.opacity);
+            damagePreviewBox(current.box);
+            damagePreviewBox(box);
+            state->preview = SPreview{monitor, current.box, box, now, duration, current.opacity, 1.F};
+            return;
+        }
+
+        if (state->preview) {
+            const auto current = previewFrame(*state->preview, now);
+            damagePreviewBox(current.box);
+            damagePreviewBox(state->preview->targetBox);
+        }
+
+        const CBox from       = toBox(AeroSnap::scaleRectFromCenter(toRect(box), 0.96));
+        const int  configured = std::max(0, static_cast<int>(state->config.previewAnimationDuration->value()));
+        state->preview        = SPreview{monitor, from, box, now, std::chrono::milliseconds{configured}, 0.F, 1.F};
+        damagePreviewBox(from);
         damagePreviewBox(box);
     }
 
@@ -508,15 +584,29 @@ namespace {
         if (!monitor || state->preview->monitor.lock() != monitor)
             return;
 
-        CBox outer = state->preview->box;
+        const auto frame = previewFrame(*state->preview, PreviewClock::now());
+        if (frame.settled && state->preview->targetOpacity <= 0.F) {
+            damagePreviewBox(frame.box);
+            state->preview.reset();
+            return;
+        }
+
+        if (!frame.settled) {
+            damagePreviewBox(frame.box);
+            damagePreviewBox(state->preview->targetBox);
+        }
+
+        CBox outer = frame.box;
         outer.translate(-monitor->m_position).scale(monitor->m_scale).round();
 
-        const int border   = std::max(0, static_cast<int>(std::round(state->config.previewBorderSize->value() * monitor->m_scale)));
-        const int rounding = std::max(0, static_cast<int>(std::round(state->config.previewRounding->value() * monitor->m_scale)));
+        const float opacity  = std::clamp(frame.opacity, 0.F, 1.F);
+        const int   border   = std::max(0, static_cast<int>(std::round(state->config.previewBorderSize->value() * monitor->m_scale)));
+        const int   rounding = std::max(0, static_cast<int>(std::round(state->config.previewRounding->value() * monitor->m_scale)));
         if (border > 0) {
+            const CHyprColor            borderColor{static_cast<uint64_t>(state->config.previewBorderColor->value())};
             CRectPassElement::SRectData borderData;
             borderData.box   = outer;
-            borderData.color = CHyprColor{static_cast<uint64_t>(state->config.previewBorderColor->value())};
+            borderData.color = borderColor.modifyA(static_cast<float>(borderColor.a) * opacity);
             borderData.round = rounding;
             g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(borderData));
         }
@@ -525,10 +615,13 @@ namespace {
         if (inner.w <= 0 || inner.h <= 0)
             return;
 
+        const CHyprColor            fillColor{static_cast<uint64_t>(state->config.previewColor->value())};
         CRectPassElement::SRectData fillData;
         fillData.box   = inner;
-        fillData.color = CHyprColor{static_cast<uint64_t>(state->config.previewColor->value())};
+        fillData.color = fillColor.modifyA(static_cast<float>(fillColor.a) * opacity);
         fillData.round = std::max(0, rounding - border);
+        fillData.blur  = state->config.previewBlur->value();
+        fillData.blurA = 0.48F * opacity;
         g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(fillData));
     }
 
@@ -567,12 +660,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                         Config::Values::SIntValueOptions{.min = 1, .max = 128});
     state->config.cornerRatio   = makeShared<Config::Values::CFloatValue>("plugin:omarchy_windows_snap:corner_ratio", "Fraction of each monitor edge reserved for corner zones",
                                                                           0.25F, Config::Values::SFloatValueOptions{.min = 0.05F, .max = 0.45F});
-    state->config.previewColor  = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_color", "Snap preview fill color", 0x383b82f6);
-    state->config.previewBorderColor = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_border_color", "Snap preview border color", 0xcc60a5fa);
-    state->config.previewBorderSize  = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_border_size", "Snap preview border size", 2,
-                                                                             Config::Values::SIntValueOptions{.min = 0, .max = 16});
-    state->config.previewRounding    = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_rounding", "Snap preview corner radius", 8,
-                                                                             Config::Values::SIntValueOptions{.min = 0, .max = 64});
+    state->config.previewColor  = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_color", "Snap preview fill color", 0x331e40af);
+    state->config.previewBorderColor       = makeShared<Config::Values::CColorValue>("plugin:omarchy_windows_snap:preview_border_color", "Snap preview border color", 0xbd2563eb);
+    state->config.previewBorderSize        = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_border_size", "Snap preview border size", 2,
+                                                                                   Config::Values::SIntValueOptions{.min = 0, .max = 16});
+    state->config.previewRounding          = makeShared<Config::Values::CIntValue>("plugin:omarchy_windows_snap:preview_rounding", "Snap preview corner radius", 8,
+                                                                                   Config::Values::SIntValueOptions{.min = 0, .max = 64});
+    state->config.previewBlur              = makeShared<Config::Values::CBoolValue>("plugin:omarchy_windows_snap:preview_blur", "Blur behind the snap preview", true);
+    state->config.previewAnimationDuration = makeShared<Config::Values::CIntValue>(
+        "plugin:omarchy_windows_snap:preview_animation_duration", "Snap preview animation duration in milliseconds", 200, Config::Values::SIntValueOptions{.min = 0, .max = 1000});
 
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.enabled);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.floatingModeOnly);
@@ -583,6 +679,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewBorderColor);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewBorderSize);
     HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewRounding);
+    HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewBlur);
+    HyprlandAPI::addConfigValueV2(pluginHandle, state->config.previewAnimationDuration);
 
     state->mouseMoveListener      = Event::bus()->m_events.input.mouse.move.listen([](Vector2D cursor, Event::SCallbackInfo& info) { onMouseMove(cursor, info); });
     state->mouseButtonListener    = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent event, Event::SCallbackInfo&) { onMouseButton(event); });

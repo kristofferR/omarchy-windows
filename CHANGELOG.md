@@ -6,9 +6,9 @@ All notable changes to Floating Mode are documented here.
 
 - Added native magnetic snapping between floating windows and monitor edges
 - Added configurable two- or three-column full-height snapping, defaulting to three columns on monitors wider than 16:9
-- Added a bottom-center drag zone and `center` dispatcher action for the middle column
+- Added a three-way bottom-edge selector and `center` dispatcher action for full-height columns
 - Preserved four quarter zones and top-edge maximization in either column layout
-- Added a compositor-rendered snap preview that appears only during an active drag
+- Added a deeper-blue, subtly blurred compositor preview that morphs smoothly between snap zones
 - Reused Hyprland's logical work areas, reserved regions, configured gaps, decoration extents, and window size constraints
 - Restored each window's pre-snap size when it is dragged away from a snapped position
 - Added the `hl.plugin.omarchy_windows_snap.snap(...)` dispatcher factory for optional keyboard bindings

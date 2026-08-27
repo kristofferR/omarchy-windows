@@ -78,13 +78,13 @@ Click the overlapping-windows icon in the Omarchy bar:
 In Floating Mode, use either the native titlebar or `Super`+drag to move a window:
 
 - Drag to the left or right edge for an outer full-height column
-- On monitors wider than 16:9, drag to the bottom center for the middle column
-- Drag into a corner for a quarter-screen window
+- In three-column mode, the bottom edge is split into equal left, center, and right full-height targets
+- Drag to an upper corner or the upper/lower section of a side edge for a quarter-screen window
 - Drag to the top center to maximize
 - Move away from an edge before releasing to cancel the snap
 - Drag a snapped window away to recover its pre-snap size
 
-The blue preview is drawn by Hyprland only while a valid snap zone is active. The square titlebar button toggles maximization; the close button closes the window and shows a red circular background on hover.
+The deeper-blue preview is drawn by Hyprland while a valid snap zone is active, then briefly fades out when the zone becomes invalid or the drag ends. It uses native blur and a 200 ms OutQuart morph between zones, then stops repainting once settled. Set `preview_blur = false` or `preview_animation_duration = 0` in the plugin configuration to disable either effect. The square titlebar button toggles maximization; the close button closes the window and shows a red circular background on hover.
 
 Full-height snapping uses `columns = "auto"` by default: monitors wider than 16:9 get three columns, while 16:9 and narrower monitors keep two. Corner zones remain quarters in either layout. To force one layout on every monitor, add this after `require("hypr.floating-mode")` in `~/.config/hypr/hyprland.lua`:
 
