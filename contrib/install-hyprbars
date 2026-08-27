@@ -57,14 +57,23 @@ prepare_private_dir() {
 }
 
 read_snap_plugin_path() {
-  local path lines=()
+  local path recorded_path install_dir plugin_name owner lines=()
   [[ -e "$snap_path_state" || -L "$snap_path_state" ]] || return 0
   [[ -f "$snap_path_state" && ! -L "$snap_path_state" ]] || die "unsafe snap module state: $snap_path_state"
   [[ "$(stat -c '%u' -- "$snap_path_state")" == "$current_uid" ]] || die "snap module state is not owned by the current user"
   mapfile -t lines <"$snap_path_state"
   ((${#lines[@]} == 1)) || die "snap module state must contain exactly one path"
-  path="${lines[0]}"
-  [[ "$path" == "$snap_install_dir"/omarchy-windows-snap-*.so ]] || die "snap module state contains an unexpected path"
+  recorded_path="${lines[0]}"
+  [[ "$recorded_path" == /* ]] || die "snap module state contains a relative path"
+  path="$(realpath -m -- "$recorded_path")" || die "cannot normalize the recorded snap module path"
+  install_dir="${path%/*}"
+  plugin_name="${path##*/}"
+  [[ "${install_dir##*/}" == omarchy-floating-mode && "$plugin_name" == omarchy-windows-snap-?*.so ]] || die "snap module state contains an unexpected path"
+  if [[ -e "$install_dir" || -L "$install_dir" ]]; then
+    [[ -d "$install_dir" && ! -L "$install_dir" ]] || die "recorded snap module directory is unsafe: $install_dir"
+    owner="$(stat -c '%u' -- "$install_dir")" || die "cannot inspect the recorded snap module directory"
+    [[ "$owner" == "$current_uid" ]] || die "recorded snap module directory is not owned by the current user"
+  fi
   printf '%s\n' "$path"
 }
 
@@ -89,7 +98,7 @@ new_config_errors() {
 }
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  require_commands hyprctl hyprpm sudo install sed grep stat
+  require_commands hyprctl hyprpm sudo install sed grep stat realpath
   previous_snap_plugin=""
   if [[ -e "$state_home" || -L "$state_home" ]]; then
     prepare_private_dir "$state_home" "installer state directory"
@@ -121,7 +130,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   exit 0
 fi
 
-require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo install sed grep mktemp awk jq sha256sum cut stat
+require_commands hyprctl hyprpm git make cmake cpio pkg-config g++ gcc sudo install sed grep mktemp awk jq sha256sum cut stat realpath
 
 [[ -f "$plugin_dir/contrib/hyprbars.lua" ]] || {
   echo "Run this from an installed $plugin_id plugin." >&2
