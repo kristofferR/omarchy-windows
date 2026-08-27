@@ -458,6 +458,7 @@ namespace {
                     .error   = "expected left, center, right, top-left, top-right, "
                                "bottom-left, bottom-right, maximize, or restore"};
 
+        currentSnapRecord(window->m_target, false);
         const auto monitor   = window->m_monitor.lock();
         const auto placement = placementFor(window->m_target, monitor, *zone);
         if (!placement)

@@ -18,6 +18,8 @@ All notable changes to Floating Mode are documented here.
 - Checked the Floating Mode marker once per drag and preserved top-edge maximize across the full corner-ratio range
 - Rolled back the installed snap module and Lua configuration when Hyprland rejects an update
 - Derived module filenames from the compiled binary so an active shared object is never overwritten in place
+- Matched the installer's data-directory fallback when `XDG_DATA_HOME` is empty
+- Documented removing optional snap bindings before uninstalling the native module
 - Added standalone ultrawide geometry tests and content-addressed native-module updates
 
 ## 1.0.12 — 2026-08-22

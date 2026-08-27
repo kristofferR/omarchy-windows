@@ -131,6 +131,8 @@ Because Hyprland plugins are ABI-sensitive, rerun the installer after a Hyprland
 
 First click the bar button to return to tiled mode. Then run:
 
+If you added the optional snap bindings above, remove those `hl.bind(... omarchy_windows_snap ...)` lines from `~/.config/hypr/hyprland.lua` before uninstalling. The snap plugin namespace is unavailable after removal.
+
 ```bash
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars --uninstall
 omarchy plugin remove io.github.rawritude.floating-mode --yes
