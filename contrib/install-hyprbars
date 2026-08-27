@@ -4,7 +4,11 @@ set -euo pipefail
 plugin_id=io.github.rawritude.floating-mode
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-state_home="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-floating-mode"
+state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+[[ "$config_home" == /* ]] || config_home="$HOME/.config"
+[[ "$data_home" == /* ]] || data_home="$HOME/.local/share"
+[[ "$state_home" == /* ]] || state_home="$HOME/.local/state"
+state_home="$state_home/omarchy-floating-mode"
 plugin_dir="$config_home/omarchy/plugins/$plugin_id"
 hypr_dir="$config_home/hypr"
 module_file="$hypr_dir/floating-mode.lua"
