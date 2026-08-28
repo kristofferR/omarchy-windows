@@ -47,8 +47,8 @@ The content-addressed snap filename lets Hyprland unload an old build before the
 
 - Official upstream: [hyprwm/hyprland-plugins](https://github.com/hyprwm/hyprland-plugins)
 - Modified component: `hyprbars` only
-- Local modification: [`patches/hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch)
-- Patch purpose: configurable circular hover backgrounds for standard and close buttons
+- Local modifications: [`patches/hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch) and [`patches/hyprbars-disabled-input.patch`](patches/hyprbars-disabled-input.patch)
+- Patch purposes: configurable button hover backgrounds and rejecting input while disabled ([hyprland-plugins#701](https://github.com/hyprwm/hyprland-plugins/pull/701))
 - Bundled original component: [`contrib/aero-snap`](contrib/aero-snap), licensed under this repository's MIT license
 - Snap implementation: Hyprland drag events, work-area geometry, and render-pass previews
 

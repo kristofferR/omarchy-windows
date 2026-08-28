@@ -96,6 +96,7 @@ git -C "$build_dir/hyprland-plugins" checkout --detach 7644cecdb947060682891a0db
   exit 1
 }
 git -C "$build_dir/hyprland-plugins" apply "$plugin_dir/patches/hyprbars-button-hover.patch"
+git -C "$build_dir/hyprland-plugins" apply "$plugin_dir/patches/hyprbars-disabled-input.patch"
 make -C "$build_dir/hyprland-plugins/hyprbars"
 make -C "$snap_source" BUILD_DIR="$build_dir/aero-snap" test all
 snap_binary_sha256="$(sha256sum "$build_dir/aero-snap/omarchy-windows-snap.so" | cut -d' ' -f1)"

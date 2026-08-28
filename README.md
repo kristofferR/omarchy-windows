@@ -38,7 +38,7 @@ These runtime components are included with a standard current Omarchy installati
 
 ### One-time native integration build
 
-The titlebar uses the official Hyprland `hyprbars` plugin with a small bundled hover-background patch. Aero-style snap zones use the bundled MIT-licensed `omarchy-windows-snap` Hyprland plugin. The installer requires:
+The titlebar uses the official Hyprland `hyprbars` plugin with small bundled hover-background and disabled-input patches. Aero-style snap zones use the bundled MIT-licensed `omarchy-windows-snap` Hyprland plugin. The installer requires:
 
 - Internet access to GitHub
 - An interactive terminal
@@ -105,7 +105,7 @@ Update community plugins with Omarchy:
 omarchy plugin update --yes
 ```
 
-If an update changes `contrib/hyprbars.lua`, `contrib/aero-snap/`, or the bundled hyprbars patch, rerun:
+If an update changes `contrib/hyprbars.lua`, `contrib/aero-snap/`, or the bundled hyprbars patches, rerun:
 
 ```bash
 ~/.config/omarchy/plugins/io.github.rawritude.floating-mode/contrib/install-hyprbars
@@ -136,7 +136,7 @@ The headless service watches for newly mapped tiled windows while the mode is en
 
 Only window addresses changed by Floating Mode are recorded. When the mode is disabled, only those windows return to tiling.
 
-Titlebars are rendered inside the compositor by the official [`hyprbars`](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars) plugin. The bundled [`hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch) adds configurable circular hover backgrounds while keeping the button symbols permanently visible.
+Titlebars are rendered inside the compositor by the official [`hyprbars`](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprbars) plugin. The bundled [`hyprbars-button-hover.patch`](patches/hyprbars-button-hover.patch) adds configurable circular hover backgrounds, while [`hyprbars-disabled-input.patch`](patches/hyprbars-disabled-input.patch) carries [hyprland-plugins#701](https://github.com/hyprwm/hyprland-plugins/pull/701) for the pinned build.
 
 The bundled `omarchy-windows-snap` plugin handles drag zones and previews inside Hyprland without a background polling process.
 
